@@ -3,6 +3,9 @@ package ctxtrans
 import (
 	"context"
 	"time"
+
+	"github.com/MimeLyc/contextual-sub-translator/internal/media"
+	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 )
 
 // TVShowInfo represents TV show information parsed from tvshow.nfo file
@@ -27,22 +30,6 @@ type Actor struct {
 	Order int    `xml:"order"`
 }
 
-// SubtitleLine represents a single subtitle line
-type SubtitleLine struct {
-	Index          int           // subtitle index
-	StartTime      time.Duration // start time
-	EndTime        time.Duration // end time
-	Text           string        // subtitle text
-	TranslatedText string        // translated text
-}
-
-// SubtitleFile represents subtitle file
-type SubtitleFile struct {
-	Lines    []SubtitleLine
-	Language string
-	Format   string // e.g. SRT, ASS, VTT etc
-}
-
 // TranslationRequest represents translation request
 type TranslationRequest struct {
 	TVShowNFOPath      string
@@ -56,8 +43,8 @@ type TranslationRequest struct {
 
 // TranslationResult represents translation result
 type TranslationResult struct {
-	OriginalFile   SubtitleFile
-	TranslatedFile SubtitleFile
+	OriginalFile   subtitle.File
+	TranslatedFile subtitle.File
 	Metadata       TranslationMetadata
 }
 
@@ -73,20 +60,10 @@ type TranslationMetadata struct {
 
 // LLMClient is the interface for LLM API
 type LLMClient interface {
-	TranslateWithContext(ctx context.Context, contextInfo TVShowInfo, subtitleLines []SubtitleLine, targetLanguage string) ([]string, error)
+	TranslateWithContext(ctx context.Context, contextInfo TVShowInfo, subtitleLines []subtitle.Line, targetLanguage string) ([]string, error)
 }
 
 // NFOReader is the interface for reading NFO files
 type NFOReader interface {
-	ReadTVShowInfo(path string) (*TVShowInfo, error)
-}
-
-// SubtitleReader is the interface for reading subtitle files
-type SubtitleReader interface {
-	ReadSubtitle(path string) (*SubtitleFile, error)
-}
-
-// SubtitleWriter is the interface for writing subtitle files
-type SubtitleWriter interface {
-	WriteSubtitle(path string, subtitle *SubtitleFile) error
+	ReadTVShowInfo(path string) (*media.TVShowInfo, error)
 }

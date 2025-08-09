@@ -1,4 +1,4 @@
-package ctxtrans
+package subtitle
 
 import (
 	"bufio"
@@ -10,16 +10,16 @@ import (
 	"time"
 )
 
-// DefaultSubtitleReader is the default subtitle file reader
-type DefaultSubtitleReader struct{}
+// DefaultReader is the default subtitle file reader
+type DefaultReader struct{}
 
-// NewSubtitleReader creates a new subtitle file reader
-func NewSubtitleReader() SubtitleReader {
-	return &DefaultSubtitleReader{}
+// NewReader creates a new subtitle file reader
+func NewReader() Reader {
+	return &DefaultReader{}
 }
 
 // ReadSubtitle reads subtitle file
-func (r *DefaultSubtitleReader) ReadSubtitle(path string) (*SubtitleFile, error) {
+func (r *DefaultReader) Read(path string) (*File, error) {
 	if !strings.HasSuffix(strings.ToLower(path), ".srt") {
 		return nil, fmt.Errorf("only SRT format subtitle files are supported: %s", path)
 	}
@@ -34,10 +34,10 @@ func (r *DefaultSubtitleReader) ReadSubtitle(path string) (*SubtitleFile, error)
 	}
 	defer file.Close()
 
-	var lines []SubtitleLine
+	var lines []Line
 	scanner := bufio.NewScanner(file)
 
-	currentLine := SubtitleLine{}
+	currentLine := Line{}
 	state := "index" // possible values: "index", "time", "text", "empty"
 	var textLines []string
 
@@ -75,7 +75,7 @@ func (r *DefaultSubtitleReader) ReadSubtitle(path string) (*SubtitleFile, error)
 				if len(textLines) > 0 {
 					currentLine.Text = strings.Join(textLines, "\n")
 					lines = append(lines, currentLine)
-					currentLine = SubtitleLine{}
+					currentLine = Line{}
 				}
 				state = "index"
 				textLines = []string{}
@@ -98,7 +98,7 @@ func (r *DefaultSubtitleReader) ReadSubtitle(path string) (*SubtitleFile, error)
 	// detect language (simple detection based on text content)
 	language := detectLanguage(lines)
 
-	return &SubtitleFile{
+	return &File{
 		Lines:    lines,
 		Language: language,
 		Format:   "SRT",
@@ -141,7 +141,7 @@ func parseSRTTime(timeString string) (time.Duration, time.Duration, error) {
 }
 
 // detectLanguage simple language detection based on common characters
-func detectLanguage(lines []SubtitleLine) string {
+func detectLanguage(lines []Line) string {
 	if len(lines) == 0 {
 		return "unknown"
 	}
@@ -174,57 +174,4 @@ func detectLanguage(lines []SubtitleLine) string {
 	}
 
 	return "unknown"
-}
-
-// DefaultSubtitleWriter is the default subtitle file writer
-type DefaultSubtitleWriter struct{}
-
-// NewSubtitleWriter creates a new subtitle file writer
-func NewSubtitleWriter() SubtitleWriter {
-	return &DefaultSubtitleWriter{}
-}
-
-// WriteSubtitle writes subtitle file to specified path
-func (w *DefaultSubtitleWriter) WriteSubtitle(path string, subtitle *SubtitleFile) error {
-	if subtitle == nil {
-		return fmt.Errorf("subtitle data is empty")
-	}
-
-	file, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	defer writer.Flush()
-
-	for _, line := range subtitle.Lines {
-		// write index
-		fmt.Fprintf(writer, "%d\n", line.Index)
-
-		// write time
-		startTime := formatDuration(line.StartTime)
-		endTime := formatDuration(line.EndTime)
-		fmt.Fprintf(writer, "%s --> %s\n", startTime, endTime)
-
-		// write text (use translated text, fallback to original if empty)
-		text := line.TranslatedText
-		if text == "" {
-			text = line.Text
-		}
-		fmt.Fprintf(writer, "%s\n\n", text)
-	}
-
-	return nil
-}
-
-// formatDuration formats time.Duration to SRT time format
-func formatDuration(d time.Duration) string {
-	hours := int(d.Hours())
-	minutes := int(d.Minutes()) % 60
-	seconds := int(d.Seconds()) % 60
-	milliseconds := int(d.Milliseconds()) % 1000
-
-	return fmt.Sprintf("%02d:%02d:%02d,%03d", hours, minutes, seconds, milliseconds)
 }

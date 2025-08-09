@@ -1,0 +1,1166 @@
+1
+00:00:20,410 --> 00:00:22,160
+<font size="20"><b>Damn you!</b></font>
+
+2
+00:00:23,580 --> 00:00:25,080
+<font size="20"><b>I'm really sorry.</b></font>
+
+3
+00:00:28,040 --> 00:00:30,340
+<font size="20"><b>{\an8}How many times do you have to do this
+before you're satisfied?</b></font>
+
+4
+00:00:30,340 --> 00:00:33,220
+<font size="20"><b>{\an8}We're always telling you
+to wash your hands with hot water.</b></font>
+
+5
+00:00:33,220 --> 00:00:37,140
+<font size="20"><b>{\an8}Don't be so hard on him.
+Jiji is doing his best, too.</b></font>
+
+6
+00:00:37,390 --> 00:00:39,100
+<font size="20"><b>Okarun, are you okay?</b></font>
+
+7
+00:00:39,100 --> 00:00:41,100
+<font size="20"><b>Yes, somehow.</b></font>
+
+8
+00:00:41,100 --> 00:00:43,060
+<font size="20"><b>Okarun, I'm so sorry!</b></font>
+
+9
+00:00:43,060 --> 00:00:45,270
+<font size="20"><b>Please, don't worry about it at all.</b></font>
+
+10
+00:00:45,350 --> 00:00:48,520
+<font size="20"><b>Evil Eye has gotten
+a lot stronger than before.</b></font>
+
+11
+00:00:49,820 --> 00:00:52,400
+<font size="20"><b>Hey, Grandma,
+isn't this getting a bit out of hand?</b></font>
+
+12
+00:00:52,650 --> 00:00:55,820
+<font size="20"><b>Jiji can't be careful
+about everything, either!</b></font>
+
+13
+00:00:56,780 --> 00:01:00,580
+<font size="20"><b>Yeah. We might not have
+a house anymore by tomorrow.</b></font>
+
+14
+00:01:00,580 --> 00:01:02,290
+<font size="20"><b>Don't wanna hear that "might"!</b></font>
+
+15
+00:01:26,850 --> 00:01:31,320
+<font size="20"><b>Pardon the intrusion!</b></font>
+
+16
+00:01:32,270 --> 00:01:34,320
+<font size="20"><b>If you're gonna intrude, go home.</b></font>
+
+17
+00:01:34,320 --> 00:01:35,820
+<font size="20"><b>Okey-dokey.</b></font>
+
+18
+00:01:37,990 --> 00:01:40,160
+<font size="20"><b>When are the hayashi folks coming?</b></font>
+
+19
+00:01:40,160 --> 00:01:41,120
+<font size="20"><b>Who knows?</b></font>
+
+20
+00:01:41,370 --> 00:01:43,580
+<font size="20"><b>Why don't we at least
+settle on a formation?</b></font>
+
+21
+00:01:43,580 --> 00:01:45,910
+<font size="20"><b>We're all over the place, especially Aira.</b></font>
+
+22
+00:01:45,910 --> 00:01:49,580
+<font size="20"><b>Huh? I'm the leader!
+You need to follow me!</b></font>
+
+23
+00:01:49,580 --> 00:01:52,130
+<font size="20"><b>If we followed a dumbass,
+we'd all go down!</b></font>
+
+24
+00:01:52,130 --> 00:01:54,710
+<font size="20"><b>What was that? You pig head!</b></font>
+
+25
+00:01:54,710 --> 00:01:56,880
+<font size="20"><b>- Ugly, ugly, ugly!
+- Pig, pig, pig!</b></font>
+
+26
+00:01:56,880 --> 00:01:58,470
+<font size="20"><b>Um, excuse me.</b></font>
+
+27
+00:02:00,890 --> 00:02:04,600
+<font size="20"><b>Would this happen to be
+Ms. Seiko Ayase's residence?</b></font>
+
+28
+00:02:05,220 --> 00:02:06,730
+<font size="20"><b>So what if it is?</b></font>
+
+29
+00:02:06,850 --> 00:02:08,310
+<font size="20"><b>Oh, so it is.</b></font>
+
+30
+00:02:08,310 --> 00:02:09,690
+<font size="20"><b>Um, we are...</b></font>
+
+31
+00:02:09,690 --> 00:02:11,900
+<font size="20"><b>...the ones who received your request.</b></font>
+
+32
+00:02:12,150 --> 00:02:13,770
+<font size="20"><b>{\an5}PATARSON</b></font>
+
+33
+00:02:12,150 --> 00:02:13,770
+<font size="20"><b>{\an5}YOSHIKICHI</b></font>
+
+34
+00:02:12,150 --> 00:02:13,770
+<font size="20"><b>{\an5}HIDEJI</b></font>
+
+35
+00:02:12,150 --> 00:02:13,770
+<font size="20"><b>{\an5}TOSHIRO</b></font>
+
+36
+00:02:12,610 --> 00:02:13,770
+<font size="20"><b>We are HAYASii.</b></font>
+
+37
+00:02:18,240 --> 00:02:19,860
+<font size="20"><b>We are HAYASii!</b></font>
+
+38
+00:03:54,000 --> 00:03:57,880
+<font size="20"><b>{\an3}EPISODE 18
+WE BECAME A FAMILY</b></font>
+
+39
+00:03:58,880 --> 00:04:01,510
+<font size="20"><b>If that's the case, then just say so.</b></font>
+
+40
+00:04:01,510 --> 00:04:05,260
+<font size="20"><b>We do have an image to maintain,
+so we're sorry.</b></font>
+
+41
+00:04:20,650 --> 00:04:21,780
+<font size="20"><b>Wicked.</b></font>
+
+42
+00:04:21,860 --> 00:04:24,950
+<font size="20"><b>This is different from what I thought,
+and it's getting me hyped up!</b></font>
+
+43
+00:04:24,950 --> 00:04:26,280
+<font size="20"><b>So awesome!</b></font>
+
+44
+00:04:26,280 --> 00:04:27,370
+<font size="20"><b>You're kidding me.</b></font>
+
+45
+00:04:27,370 --> 00:04:29,160
+<font size="20"><b>Are they spirit mediums?</b></font>
+
+46
+00:04:29,160 --> 00:04:31,750
+<font size="20"><b>Nope. They can't even sense spirits.</b></font>
+
+47
+00:04:32,540 --> 00:04:35,370
+<font size="20"><b>- But their performance is the real deal.
+- Test, test. Mic check.</b></font>
+
+48
+00:04:35,370 --> 00:04:38,670
+<font size="20"><b>They have the power to echo their sounds
+into the spiritual world.</b></font>
+
+49
+00:04:40,170 --> 00:04:42,670
+<font size="20"><b>Besides, if they can't sense spirits...</b></font>
+
+50
+00:04:45,130 --> 00:04:48,890
+<font size="20"><b>they won't get dragged along
+by evil spirits during an exorcism.</b></font>
+
+51
+00:05:01,610 --> 00:05:03,400
+<font size="20"><b>Whoa, oh no!</b></font>
+
+52
+00:05:24,380 --> 00:05:28,180
+<font size="20"><b>All right, you bastards!
+Let's put some spirit into this!</b></font>
+
+53
+00:05:30,100 --> 00:05:31,600
+<font size="20"><b>Yeah!</b></font>
+
+54
+00:05:31,810 --> 00:05:34,270
+<font size="20"><b>I said, let's put some spirit into this!
+Come on!</b></font>
+
+55
+00:05:34,270 --> 00:05:35,480
+<font size="20"><b>Yeah!</b></font>
+
+56
+00:05:35,480 --> 00:05:38,270
+<font size="20"><b>All right, bring it on! Let's go!</b></font>
+
+57
+00:05:38,270 --> 00:05:39,520
+<font size="20"><b>Yeah!</b></font>
+
+58
+00:05:39,520 --> 00:05:41,980
+<font size="20"><b>Are you all ready?!</b></font>
+
+59
+00:05:41,980 --> 00:05:44,740
+<font size="20"><b>Yeah!</b></font>
+
+60
+00:06:05,920 --> 00:06:09,220
+<font size="20"><b>Time for an exorcism!</b></font>
+
+61
+00:06:17,730 --> 00:06:20,900
+<font size="20"><b>Time for an exorcism!</b></font>
+
+62
+00:06:29,990 --> 00:06:35,580
+<font size="20"><b><i>Dark and corroded world in despair
+Ravenous beasts are wandering</i></b></font>
+
+63
+00:06:35,580 --> 00:06:41,080
+<font size="20"><b><i>Lying in wait for me like a hex
+Blackest of destinations</i></b></font>
+
+64
+00:06:52,300 --> 00:06:57,520
+<font size="20"><b><i>Echoing through the frostbitten sky
+Song of the grimmest lullaby</i></b></font>
+
+65
+00:06:57,810 --> 00:07:03,110
+<font size="20"><b><i>Pain that you suffered, plain from your scars
+Hark, I can hear your requiem</i></b></font>
+
+66
+00:07:03,770 --> 00:07:09,360
+<font size="20"><b><i>Starting to crumble down
+In a cacophony of screams</i></b></font>
+
+67
+00:07:09,490 --> 00:07:14,200
+<font size="20"><b><i>Spirit in lunacy
+Coming apart at the seams</i></b></font>
+
+68
+00:07:14,280 --> 00:07:19,750
+<font size="20"><b><i>HUNTING SOUL, Insatiate and wild
+Roaming the land for a blood sacrifice</i></b></font>
+
+69
+00:07:19,750 --> 00:07:25,290
+<font size="20"><b><i>HUNTING SOUL, Night after night
+So go to sleep if you dare</i></b></font>
+
+70
+00:07:29,380 --> 00:07:33,390
+<font size="20"><b>In the back! Are you watching?</b></font>
+
+71
+00:07:35,180 --> 00:07:41,390
+<font size="20"><b>I won't leave anyone behind!</b></font>
+
+72
+00:07:44,650 --> 00:07:47,320
+<font size="20"><b>Let's go!</b></font>
+
+73
+00:07:51,700 --> 00:07:53,950
+<font size="20"><b>Bring it on!</b></font>
+
+74
+00:07:53,950 --> 00:07:55,660
+<font size="20"><b>Stop it!</b></font>
+
+75
+00:07:57,120 --> 00:08:02,580
+<font size="20"><b><i>Pallid the wasteland, Filling the air
+Howls of a fallen angel</i></b></font>
+
+76
+00:08:02,000 --> 00:08:03,960
+<font size="20"><b>{\an8}Momo! Hold Jiji down!</b></font>
+
+77
+00:08:02,580 --> 00:08:08,090
+<font size="20"><b><i>Wings that are twisted, Ready to break
+Yearning for something true to love</i></b></font>
+
+78
+00:08:03,960 --> 00:08:05,960
+<font size="20"><b>{\an8}Use your psychic powers.
+Don't get near him!</b></font>
+
+79
+00:08:05,960 --> 00:08:07,210
+<font size="20"><b>{\an8}I know!</b></font>
+
+80
+00:08:08,670 --> 00:08:14,090
+<font size="20"><b><i>Into oblivion
+Feeling it call unto thee</i></b></font>
+
+81
+00:08:14,300 --> 00:08:15,890
+<font size="20"><b>{\an8}Don't erase him!</b></font>
+
+82
+00:08:14,300 --> 00:08:19,140
+<font size="20"><b><i>Now uncontrollable
+Feral is your JEALOUSY</i></b></font>
+
+83
+00:08:18,390 --> 00:08:19,810
+<font size="20"><b>{\an8}<i>This is...</i></b></font>
+
+84
+00:08:19,810 --> 00:08:22,020
+<font size="20"><b>{\an8}Don't kill Evil Eye!</b></font>
+
+85
+00:08:21,180 --> 00:08:23,230
+<font size="20"><b><i>No more pain</i></b></font>
+
+86
+00:08:24,600 --> 00:08:29,610
+<font size="20"><b>Hey! Put some spirit into it!</b></font>
+
+87
+00:08:29,610 --> 00:08:32,570
+<font size="20"><b>I promised I would play with him!</b></font>
+
+88
+00:08:33,200 --> 00:08:36,160
+<font size="20"><b>He just wanted to play with someone!</b></font>
+
+89
+00:08:36,410 --> 00:08:38,240
+<font size="20"><b>He was trapped all that time,</b></font>
+
+90
+00:08:38,240 --> 00:08:41,660
+<font size="20"><b>but he kept dreaming of the day
+that he'd get to play with someone.</b></font>
+
+91
+00:08:41,660 --> 00:08:48,960
+<font size="20"><b>He even practiced dancing, but now
+that he's out, he's just going to die again?</b></font>
+
+92
+00:08:50,590 --> 00:08:53,090
+<font size="20"><b>That's way too sad!</b></font>
+
+93
+00:08:53,630 --> 00:08:56,970
+<font size="20"><b>I'll try really hard
+and not use cold water anymore!</b></font>
+
+94
+00:08:57,640 --> 00:09:01,810
+<font size="20"><b>So please! Please don't kill Evil Eye!</b></font>
+
+95
+00:09:01,930 --> 00:09:06,980
+<font size="20"><b><i>HUNTING SOUL, Fire aglow
+Scorching the earth as it crosses the skies</i></b></font>
+
+96
+00:09:07,190 --> 00:09:08,650
+<font size="20"><b>{\an8}Please!</b></font>
+
+97
+00:09:07,190 --> 00:09:12,860
+<font size="20"><b><i>HUNTING SOUL, LOSING CONTROL
+CHASIN' YOU DOWN TO THE END</i></b></font>
+
+98
+00:09:12,860 --> 00:09:14,280
+<font size="20"><b>I'm begging you!</b></font>
+
+99
+00:09:27,290 --> 00:09:32,210
+<font size="20"><b>HUNTING SOUL!</b></font>
+
+100
+00:09:45,980 --> 00:09:47,140
+<font size="20"><b>Um...</b></font>
+
+101
+00:09:49,310 --> 00:09:51,020
+<font size="20"><b>Call it off.</b></font>
+
+102
+00:09:51,980 --> 00:09:53,730
+<font size="20"><b>No exorcism.</b></font>
+
+103
+00:09:54,610 --> 00:09:56,900
+<font size="20"><b>I'll have Evil Eye join my family.</b></font>
+
+104
+00:09:58,280 --> 00:10:00,120
+<font size="20"><b>Huh? What? What did you just say?</b></font>
+
+105
+00:10:02,120 --> 00:10:05,960
+<font size="20"><b>Sorry to do this after coming
+all the way here, but you can go home now.</b></font>
+
+106
+00:10:07,210 --> 00:10:10,170
+<font size="20"><b>Oh, I see. I understand.</b></font>
+
+107
+00:10:13,130 --> 00:10:14,880
+<font size="20"><b>You sure, Grandma?</b></font>
+
+108
+00:10:14,880 --> 00:10:18,260
+<font size="20"><b>You heard Jiji.
+Can't do anything about it.</b></font>
+
+109
+00:10:18,550 --> 00:10:22,930
+<font size="20"><b>I personally like that kind of spirit in Jiji.</b></font>
+
+110
+00:10:24,060 --> 00:10:28,140
+<font size="20"><b>Then, what? We have to keep
+taking care of this guy forever?</b></font>
+
+111
+00:10:28,140 --> 00:10:30,150
+<font size="20"><b>I totally don't want to!</b></font>
+
+112
+00:10:30,650 --> 00:10:35,150
+<font size="20"><b>I don't want my precious time
+to be wasted because of his selfishness!</b></font>
+
+113
+00:10:38,650 --> 00:10:42,620
+<font size="20"><b>Then, I'll learn how to hold Evil Eye back.</b></font>
+
+114
+00:10:44,030 --> 00:10:48,000
+<font size="20"><b>If I can become stronger
+and easily hold Evil Eye back,</b></font>
+
+115
+00:10:48,000 --> 00:10:50,620
+<font size="20"><b>there wouldn't be any problems
+even if he were to transform, right?</b></font>
+
+116
+00:10:51,130 --> 00:10:54,500
+<font size="20"><b>But is that something you need to go
+out of your way to do, Takakura?</b></font>
+
+117
+00:10:54,880 --> 00:10:56,960
+<font size="20"><b>You won't be able to sleep
+peacefully anymore!</b></font>
+
+118
+00:10:57,170 --> 00:10:58,970
+<font size="20"><b>Your life will be in danger.</b></font>
+
+119
+00:11:00,890 --> 00:11:02,220
+<font size="20"><b>He's my friend.</b></font>
+
+120
+00:11:07,640 --> 00:11:09,520
+<font size="20"><b>Then I'll become stronger, too.</b></font>
+
+121
+00:11:09,520 --> 00:11:11,270
+<font size="20"><b>It's easier if there's two of us, right?</b></font>
+
+122
+00:11:11,270 --> 00:11:12,520
+<font size="20"><b>Hold on!</b></font>
+
+123
+00:11:12,520 --> 00:11:16,230
+<font size="20"><b>I'll become stronger as well!
+So that I can send you flying!</b></font>
+
+124
+00:11:16,230 --> 00:11:18,070
+<font size="20"><b>I'd like to see you try, you ugly hag!</b></font>
+
+125
+00:11:18,400 --> 00:11:21,530
+<font size="20"><b>Okarun, let me hug you.</b></font>
+
+126
+00:11:24,490 --> 00:11:26,490
+<font size="20"><b>Okarun!</b></font>
+
+127
+00:11:27,580 --> 00:11:28,450
+<font size="20"><b>You guys!</b></font>
+
+128
+00:11:28,450 --> 00:11:30,460
+<font size="20"><b>- Okarun!
+- Hot water!</b></font>
+
+129
+00:11:39,470 --> 00:11:41,930
+<font size="20"><b>Sorry to have bothered you!</b></font>
+
+130
+00:11:42,180 --> 00:11:49,930
+<font size="20"><b>If you need anything again,
+please contact us!</b></font>
+
+131
+00:11:46,810 --> 00:11:49,930
+<font size="20"><b>{\an8}TOSHIRO</b></font>
+
+132
+00:11:50,230 --> 00:11:52,310
+<font size="20"><b>Yeah. Great work.</b></font>
+
+133
+00:11:55,730 --> 00:11:58,570
+<font size="20"><b>We might call you again real soon.</b></font>
+
+134
+00:12:10,290 --> 00:12:12,830
+<font size="20"><b>Grandma, it's cold in the house now.</b></font>
+
+135
+00:12:13,040 --> 00:12:16,630
+<font size="20"><b>For now, grab some cardboard boxes
+from the supermarket.</b></font>
+
+136
+00:12:19,460 --> 00:12:21,550
+<font size="20"><b>Sit on your legs, back straight.</b></font>
+
+137
+00:12:22,260 --> 00:12:24,180
+<font size="20"><b>Clench up your lower abs.</b></font>
+
+138
+00:12:24,470 --> 00:12:29,310
+<font size="20"><b>Imagine a laser beam coming out of the top
+of your head and your fingertips.</b></font>
+
+139
+00:12:33,940 --> 00:12:35,940
+<font size="20"><b>Don't fall over even when you get pushed.</b></font>
+
+140
+00:12:35,940 --> 00:12:38,480
+<font size="20"><b>Sit like you're rooted to the ground.</b></font>
+
+141
+00:12:38,480 --> 00:12:39,780
+<font size="20"><b>Sure.</b></font>
+
+142
+00:12:39,780 --> 00:12:44,110
+<font size="20"><b>Jiji, like this.
+Back straight. Try pushing me.</b></font>
+
+143
+00:12:44,860 --> 00:12:46,450
+<font size="20"><b>Try pushing really hard.</b></font>
+
+144
+00:12:46,450 --> 00:12:48,030
+<font size="20"><b>Huh? Really?</b></font>
+
+145
+00:12:51,080 --> 00:12:54,080
+<font size="20"><b>Whoa, you won't fall over!
+Seriously? This is amazing!</b></font>
+
+146
+00:12:54,290 --> 00:12:58,170
+<font size="20"><b>You were so reluctant to do this,
+but you learned it after all.</b></font>
+
+147
+00:12:58,170 --> 00:13:01,170
+<font size="20"><b>I didn't think it would actually be useful.</b></font>
+
+148
+00:13:04,970 --> 00:13:07,970
+<font size="20"><b>Back in grade school, you made
+some weird poses. Was it this?</b></font>
+
+149
+00:13:07,970 --> 00:13:10,930
+<font size="20"><b>I can use psychic powers
+when I'm in this condition.</b></font>
+
+150
+00:13:11,100 --> 00:13:13,770
+<font size="20"><b>This is the state where chi is flowing out.</b></font>
+
+151
+00:13:13,770 --> 00:13:17,310
+<font size="20"><b>When you enter this state,
+you'll be able to use spiritual energy.</b></font>
+
+152
+00:13:18,230 --> 00:13:20,360
+<font size="20"><b>Your spiritual energy is off the charts.</b></font>
+
+153
+00:13:20,360 --> 00:13:28,320
+<font size="20"><b>With all that energy, maybe you'll
+be able to hold Evil Eye back by yourself.</b></font>
+
+154
+00:14:10,410 --> 00:14:11,620
+<font size="20"><b>Hup.</b></font>
+
+155
+00:14:28,590 --> 00:14:30,850
+<font size="20"><b>Whoa, you scared me.</b></font>
+
+156
+00:14:31,180 --> 00:14:34,180
+<font size="20"><b>Mr. Jiji, please wash your hands
+with hot water.</b></font>
+
+157
+00:14:34,180 --> 00:14:35,680
+<font size="20"><b>Okay.</b></font>
+
+158
+00:14:41,440 --> 00:14:43,360
+<font size="20"><b>It's getting warm now.</b></font>
+
+159
+00:14:43,690 --> 00:14:44,780
+<font size="20"><b>Thanks.</b></font>
+
+160
+00:15:09,130 --> 00:15:11,090
+<font size="20"><b>Thanks, Okarun.</b></font>
+
+161
+00:15:11,090 --> 00:15:12,300
+<font size="20"><b>It's nothing.</b></font>
+
+162
+00:15:16,220 --> 00:15:17,560
+<font size="20"><b>Oof.</b></font>
+
+163
+00:15:27,230 --> 00:15:30,700
+<font size="20"><b>Oh my. The cardboard
+is coming apart over there.</b></font>
+
+164
+00:15:30,700 --> 00:15:34,660
+<font size="20"><b>Mr. Jiji, don't get close to it.
+There's dew on it and stuff.</b></font>
+
+165
+00:15:51,010 --> 00:15:53,470
+<font size="20"><b>I'm sorry all this happened because of me.</b></font>
+
+166
+00:15:53,470 --> 00:15:57,390
+<font size="20"><b>Please don't apologize.
+We're looking out for each other.</b></font>
+
+167
+00:15:59,180 --> 00:16:04,810
+<font size="20"><b>When I was cursed by Turbo Granny,
+I troubled the Ayase family as well.</b></font>
+
+168
+00:16:05,940 --> 00:16:08,820
+<font size="20"><b>But they really devoted themselves
+to taking care of me.</b></font>
+
+169
+00:16:10,320 --> 00:16:14,910
+<font size="20"><b>I wanted to properly repay them
+for living expenses and clothing costs,</b></font>
+
+170
+00:16:14,910 --> 00:16:19,370
+<font size="20"><b>so I delivered newspapers and
+took some money to them. But then...</b></font>
+
+171
+00:16:22,000 --> 00:16:25,080
+<font size="20"><b>What good would it do to repay me?</b></font>
+
+172
+00:16:31,510 --> 00:16:35,010
+<font size="20"><b>If you feel gratitude
+for us taking care of you,</b></font>
+
+173
+00:16:35,550 --> 00:16:40,220
+<font size="20"><b>you should pay it forward
+to someone else who's in trouble.</b></font>
+
+174
+00:16:42,770 --> 00:16:46,860
+<font size="20"><b>That's what it means
+to look out for each other.</b></font>
+
+175
+00:16:51,940 --> 00:16:53,490
+<font size="20"><b>Auntie is so awesome!</b></font>
+
+176
+00:16:53,490 --> 00:16:56,620
+<font size="20"><b>I thought I wanted
+to say things like that, too.</b></font>
+
+177
+00:16:57,410 --> 00:17:00,870
+<font size="20"><b>In my case, I'm just acting tough.</b></font>
+
+178
+00:17:01,620 --> 00:17:06,000
+<font size="20"><b>But I want to look cool, even if
+it's just a little bit, so I'm mimicking her.</b></font>
+
+179
+00:17:17,010 --> 00:17:20,060
+<font size="20"><b>There is absolutely no crisis management.</b></font>
+
+180
+00:18:02,310 --> 00:18:04,430
+<font size="20"><b>Time to eat.</b></font>
+
+181
+00:18:04,640 --> 00:18:06,230
+<font size="20"><b>Takakura, what about seconds?</b></font>
+
+182
+00:18:06,350 --> 00:18:09,230
+<font size="20"><b>There's more miso soup, too!
+Make sure to eat lots.</b></font>
+
+183
+00:18:09,230 --> 00:18:10,900
+<font size="20"><b>Oh, sure.</b></font>
+
+184
+00:18:11,650 --> 00:18:15,490
+<font size="20"><b>Jiji, gotta clench your lower abs
+and straighten your back.</b></font>
+
+185
+00:18:15,490 --> 00:18:16,990
+<font size="20"><b>Emit chi at all times.</b></font>
+
+186
+00:18:16,990 --> 00:18:18,070
+<font size="20"><b>Yes'm.</b></font>
+
+187
+00:18:19,410 --> 00:18:20,950
+<font size="20"><b>More, please.</b></font>
+
+188
+00:18:24,450 --> 00:18:25,830
+<font size="20"><b>Go get some yourself.</b></font>
+
+189
+00:18:25,910 --> 00:18:28,830
+<font size="20"><b>Damn you, you did it for Okarun.</b></font>
+
+190
+00:18:28,830 --> 00:18:30,040
+<font size="20"><b>Of course I did.</b></font>
+
+191
+00:18:30,040 --> 00:18:32,090
+<font size="20"><b>What was that, ugly girl?
+You wanna go?</b></font>
+
+192
+00:18:32,090 --> 00:18:35,800
+<font size="20"><b>- Pig, pig, pig, pig!
+- Ugly, ugly, ugly, ugly!</b></font>
+
+193
+00:18:38,380 --> 00:18:40,300
+<font size="20"><b>Take care!</b></font>
+
+194
+00:18:40,300 --> 00:18:42,470
+<font size="20"><b>- Takakura, did you forget anything?
+- Hey! Take care!</b></font>
+
+195
+00:18:42,470 --> 00:18:44,720
+<font size="20"><b>- Did you prepare for your classes today?
+- Yes.</b></font>
+
+196
+00:18:44,720 --> 00:18:48,100
+<font size="20"><b>- Huh? Take care.
+- Man, my stomach hurts.</b></font>
+
+197
+00:18:48,100 --> 00:18:50,690
+<font size="20"><b>I think I got too chilly
+because the house was too cold.</b></font>
+
+198
+00:18:48,100 --> 00:18:50,690
+<font size="20"><b>{\an8}Do your best, everyone!</b></font>
+
+199
+00:18:50,690 --> 00:18:52,310
+<font size="20"><b>You were sleeping
+with your stomach out.</b></font>
+
+200
+00:18:50,690 --> 00:18:57,610
+<font size="20"><b>{\an8}Motivation! Courage! Spirit!
+Tenacity! Sincerity!</b></font>
+
+201
+00:18:52,310 --> 00:18:54,570
+<font size="20"><b>Then put the comforter on me!</b></font>
+
+202
+00:18:54,570 --> 00:18:58,530
+<font size="20"><b>Takakura, let me tell you. Momo Ayase
+thrashes around in her sleep!</b></font>
+
+203
+00:18:57,950 --> 00:19:06,200
+<font size="20"><b>{\an8}Motivation! Courage! Spirit! Sincerity!
+Huh? What was it? Sincerity! Tenacity!</b></font>
+
+204
+00:18:58,530 --> 00:18:59,700
+<font size="20"><b>Hey, stop that!</b></font>
+
+205
+00:18:59,700 --> 00:19:01,780
+<font size="20"><b>And she uses other people's toner
+without asking.</b></font>
+
+206
+00:19:01,780 --> 00:19:03,030
+<font size="20"><b>You said it was okay!</b></font>
+
+207
+00:19:03,030 --> 00:19:08,580
+<font size="20"><b>- Aira grinds her teeth really loud!
+- Hey, damn it! Don't be lying here!</b></font>
+
+208
+00:19:06,700 --> 00:19:09,500
+<font size="20"><b>{\an8}Everyone take care on your way!</b></font>
+
+209
+00:19:14,340 --> 00:19:16,300
+<font size="20"><b>That's it! I'm gonna get a part-time job!</b></font>
+
+210
+00:19:16,300 --> 00:19:17,380
+<font size="20"><b>What's gotten into you?</b></font>
+
+211
+00:19:17,380 --> 00:19:18,760
+<font size="20"><b>I'm going to rebuild the house!</b></font>
+
+212
+00:19:18,760 --> 00:19:19,680
+<font size="20"><b>Wicked!</b></font>
+
+213
+00:19:19,680 --> 00:19:21,720
+<font size="20"><b>- What about your smartphone?
+- Like I need something like that.</b></font>
+
+214
+00:19:23,140 --> 00:19:26,060
+<font size="20"><b>Right now, we're seeking warmth.</b></font>
+
+215
+00:19:26,060 --> 00:19:28,230
+<font size="20"><b>Was your house that cold?</b></font>
+
+216
+00:19:28,230 --> 00:19:30,270
+<font size="20"><b>I mean, it's frigid, of course!</b></font>
+
+217
+00:19:30,270 --> 00:19:33,520
+<font size="20"><b>Wasn't Ririna saying that she was looking
+for some part-time help?</b></font>
+
+218
+00:19:37,820 --> 00:19:40,200
+<font size="20"><b>Oh, she was. Was it for a restaurant?</b></font>
+
+219
+00:19:40,320 --> 00:19:42,910
+<font size="20"><b>Seriously? Tell her I'll totally do it!</b></font>
+
+220
+00:19:42,910 --> 00:19:45,490
+<font size="20"><b>But Momo, you never last long
+in a part-time job.</b></font>
+
+221
+00:19:45,490 --> 00:19:47,290
+<font size="20"><b>You always argue with the boss and stuff.</b></font>
+
+222
+00:19:47,290 --> 00:19:49,460
+<font size="20"><b>I just hate the unreasonable.</b></font>
+
+223
+00:19:49,460 --> 00:19:50,580
+<font size="20"><b>So cool.</b></font>
+
+224
+00:19:50,580 --> 00:19:54,170
+<font size="20"><b>It's hard for a gal to recommend
+someone who quits so quickly, though.</b></font>
+
+225
+00:19:54,170 --> 00:19:57,420
+<font size="20"><b>It's fine! I have grown up!</b></font>
+
+226
+00:19:57,420 --> 00:20:00,420
+<font size="20"><b>I won't give up oh so easily!</b></font>
+
+227
+00:20:00,630 --> 00:20:02,800
+<font size="20"><b>Did you hear that, Ms. Muko?</b></font>
+
+228
+00:20:02,800 --> 00:20:04,680
+<font size="20"><b>I did hear it, Ms. Mi.</b></font>
+
+229
+00:20:08,140 --> 00:20:10,020
+<font size="20"><b>Okarun!</b></font>
+
+230
+00:20:13,350 --> 00:20:16,900
+<font size="20"><b>Momo said she got a part-time job today,
+so you can go home without her.</b></font>
+
+231
+00:20:17,480 --> 00:20:20,150
+<font size="20"><b>All right. I understand.</b></font>
+
+232
+00:20:20,780 --> 00:20:22,740
+<font size="20"><b>- And...
+- ...so!</b></font>
+
+233
+00:20:23,360 --> 00:20:25,240
+<font size="20"><b>You should go on a date with us!</b></font>
+
+234
+00:20:25,530 --> 00:20:27,280
+<font size="20"><b>What? I decline!</b></font>
+
+235
+00:20:27,450 --> 00:20:28,660
+<font size="20"><b>Come with us, you punk!</b></font>
+
+236
+00:20:28,660 --> 00:20:30,500
+<font size="20"><b>Don't resist!</b></font>
+
+237
+00:20:34,250 --> 00:20:35,750
+<font size="20"><b>Hold on, wait!</b></font>
+
+238
+00:20:35,880 --> 00:20:37,710
+<font size="20"><b>I'm not gonna go on a date!</b></font>
+
+239
+00:20:37,710 --> 00:20:39,380
+<font size="20"><b>We're just gonna have some tea!</b></font>
+
+240
+00:20:39,380 --> 00:20:41,970
+<font size="20"><b>Don't you call that a date?</b></font>
+
+241
+00:20:42,800 --> 00:20:45,760
+<font size="20"><b>Then if Momo and Jiji were having tea,
+would that be a date?</b></font>
+
+242
+00:20:45,760 --> 00:20:46,680
+<font size="20"><b>Of course not.</b></font>
+
+243
+00:20:46,800 --> 00:20:49,680
+<font size="20"><b>Then tell us what's so different
+when it's us, damn it!</b></font>
+
+244
+00:20:51,350 --> 00:20:53,060
+<font size="20"><b>No way!</b></font>
+
+245
+00:21:18,960 --> 00:21:20,050
+<font size="20"><b>{\an8}KAMIGOE SHOPPING STREET</b></font>
+
+246
+00:21:25,050 --> 00:21:27,550
+<font size="20"><b>I really don't want to!</b></font>
+
+247
+00:21:28,300 --> 00:21:29,930
+<font size="20"><b>Okarun, this way! Over here!</b></font>
+
+248
+00:21:30,220 --> 00:21:32,930
+<font size="20"><b>I'm not going to drink one drop of tea!</b></font>
+
+249
+00:21:33,180 --> 00:21:34,310
+<font size="20"><b>You'll get thirsty.</b></font>
+
+250
+00:21:34,310 --> 00:21:35,560
+<font size="20"><b>No, I won't!</b></font>
+
+251
+00:21:35,690 --> 00:21:38,310
+<font size="20"><b>Absolutely sure?
+You better not drink anything, then!</b></font>
+
+252
+00:21:38,480 --> 00:21:40,150
+<font size="20"><b>I won't drink!</b></font>
+
+253
+00:21:41,730 --> 00:21:44,240
+<font size="20"><b>Welcome home, master!</b></font>
+
+254
+00:21:51,040 --> 00:21:52,500
+<font size="20"><b>How many in your party?</b></font>
+
+255
+00:21:52,500 --> 00:21:54,790
+<font size="20"><b>Three!</b></font>
+
+256
+00:21:58,040 --> 00:22:01,130
+<font size="20"><b>Hey, you maid over there!
+Make sure to serve us well.</b></font>
+
+257
+00:22:01,590 --> 00:22:03,300
+<font size="20"><b>Wait, Okarun?</b></font>
+
+258
+00:22:03,550 --> 00:22:04,970
+<font size="20"><b>M-Miss Ayase!</b></font>
+
+259
+00:22:13,810 --> 00:22:15,390
+<font size="20"><b>Come on now.</b></font>
+
+260
+00:22:19,230 --> 00:22:21,770
+<font size="20"><b>Welcome home, master!</b></font>
+
+261
+00:23:52,950 --> 00:23:55,660
+<font size="20"><b>There's not enough food!
+Bring me some more!</b></font>
+
+262
+00:23:55,660 --> 00:23:57,620
+<font size="20"><b>Everything's expensive, you idiot!</b></font>
+
+263
+00:23:57,620 --> 00:23:59,710
+<font size="20"><b>A house with no food? I'll just run away!</b></font>
+
+264
+00:23:59,710 --> 00:24:00,750
+<font size="20"><b>Fine, then, leave!</b></font>
+
+265
+00:24:00,750 --> 00:24:03,880
+<font size="20"><b>Yeah? I'm never coming back
+to this damn house, then!</b></font>
+
+266
+00:24:04,080 --> 00:24:07,050
+<font size="20"><b>Next episode,
+"Feeling Kinda Gloomy."</b></font>
+
+267
+00:24:04,420 --> 00:24:07,050
+<font size="20"><b>{\an8}EPISODE 19
+FEELING KINDA GLOOMY</b></font>

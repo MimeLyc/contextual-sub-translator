@@ -69,7 +69,10 @@ func NewClient(config *Config) (*Client, error) {
 //		{Role: "user", Content: "Hello, how are you?"},
 //	}
 //	response, err := client.ChatCompletion(ctx, messages, nil)
-func (c *Client) ChatCompletion(ctx context.Context, messages []Message, opts *ChatCompletionOptions) (*ChatResponse, error) {
+func (c *Client) ChatCompletion(
+	ctx context.Context,
+	messages []Message,
+	opts *ChatCompletionOptions) (*ChatResponse, error) {
 	if opts == nil {
 		opts = NewChatCompletionOptions()
 	}
@@ -154,7 +157,11 @@ func (c *Client) SimpleChat(ctx context.Context, prompt string, systemPrompt str
 //		log.Fatal(err)
 //	}
 //	response, err := client.ChatWithFiles(ctx, "Summarize this document", []llm.File{*file}, "You are a helpful assistant.")
-func (c *Client) ChatWithFiles(ctx context.Context, prompt string, files []File, systemPrompt string) (string, error) {
+func (c *Client) ChatWithFiles(
+	ctx context.Context,
+	prompt string,
+	files []File,
+	systemPrompt string) (string, error) {
 	messages := []Message{
 		{Role: "user", Content: prompt, FilePaths: []string{}},
 	}
@@ -176,7 +183,7 @@ func (c *Client) ChatWithFiles(ctx context.Context, prompt string, files []File,
 }
 
 // makeRequest makes a raw HTTP request to the configured LLM API
-func (c *Client) makeRequest(ctx context.Context, method, path string, payload interface{}) (*ChatResponse, error) {
+func (c *Client) makeRequest(ctx context.Context, method, path string, payload any) (*ChatResponse, error) {
 	url := c.baseURL + path
 
 	var body io.Reader

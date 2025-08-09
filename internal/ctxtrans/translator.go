@@ -5,15 +5,18 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
+
+	"github.com/MimeLyc/contextual-sub-translator/internal/media"
+	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
+	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
 )
 
 // Translator is the core structure for subtitle translator
 type Translator struct {
 	nfoReader      NFOReader
-	subtitleReader SubtitleReader
-	subtitleWriter SubtitleWriter
-	llmClient      LLMClient
+	subtitleReader subtitle.Reader
+	subtitleWriter subtitle.Writer
+	translator     translator.Translator
 	config         TranslatorConfig
 }
 
@@ -32,20 +35,20 @@ type TranslatorConfig struct {
 func NewTranslator(config TranslatorConfig) (*Translator, error) {
 	return &Translator{
 		nfoReader:      NewNFOReader(),
-		subtitleReader: NewSubtitleReader(),
-		subtitleWriter: NewSubtitleWriter(),
+		subtitleReader: subtitle.NewReader(),
+		subtitleWriter: subtitle.NewWriter(),
 		config:         config,
 	}, nil
 }
 
 // SetLLMClient sets the LLM client
-func (t *Translator) SetLLMClient(client LLMClient) {
-	t.llmClient = client
+func (t *Translator) SetTranslator(cli translator.Translator) {
+	t.translator = cli
 }
 
 // TranslateFile translates a single subtitle file
 func (t *Translator) TranslateFile(ctx context.Context, tvshowNFOPath, subtitlePath string) (*TranslationResult, error) {
-	startTime := time.Now()
+	// startTime := time.Now()
 
 	// Read NFO file
 	tvShowInfo, err := t.nfoReader.ReadTVShowInfo(tvshowNFOPath)
@@ -54,43 +57,35 @@ func (t *Translator) TranslateFile(ctx context.Context, tvshowNFOPath, subtitleP
 	}
 
 	// Read subtitle file
-	subtitleFile, err := t.subtitleReader.ReadSubtitle(subtitlePath)
+	subtitleFile, err := t.subtitleReader.Read(subtitlePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read subtitle file: %w", err)
 	}
 
 	// Use empty info if context is not enabled
-	var contextInfo TVShowInfo
+	var contextInfo media.TVShowInfo
 	if t.config.ContextEnabled {
 		contextInfo = *tvShowInfo
 	}
-
 	// Perform translation
-	translations, err := t.translateSubtitleLines(ctx, contextInfo, subtitleFile.Lines)
+	translations, err := t.translateSubtitleLines(
+		ctx, translator.MediaMeta{
+			TVShowInfo: contextInfo,
+		}, subtitleFile.Lines)
 	if err != nil {
 		return nil, fmt.Errorf("failed to translate subtitles: %w", err)
 	}
 
 	// Update translation results
-	translatedFile := &SubtitleFile{
-		Lines:    make([]SubtitleLine, len(subtitleFile.Lines)),
+	translatedFile := &subtitle.File{
+		Lines:    translations,
 		Language: t.config.TargetLanguage,
 		Format:   subtitleFile.Format,
 	}
 
-	for i, line := range subtitleFile.Lines {
-		translatedFile.Lines[i] = SubtitleLine{
-			Index:          line.Index,
-			StartTime:      line.StartTime,
-			EndTime:        line.EndTime,
-			Text:           line.Text,
-			TranslatedText: translations[i],
-		}
-	}
-
 	// Save translation results if output path is specified
 	if t.config.OutputPath != "" {
-		if err := t.subtitleWriter.WriteSubtitle(t.config.OutputPath, translatedFile); err != nil {
+		if err := t.subtitleWriter.Write(t.config.OutputPath, translatedFile); err != nil {
 			return nil, fmt.Errorf("failed to save translation results: %w", err)
 		}
 	}
@@ -99,50 +94,38 @@ func (t *Translator) TranslateFile(ctx context.Context, tvshowNFOPath, subtitleP
 	result := &TranslationResult{
 		OriginalFile:   *subtitleFile,
 		TranslatedFile: *translatedFile,
-		Metadata: TranslationMetadata{
-			SourceLanguage:  subtitleFile.Language,
-			TargetLanguage:  t.config.TargetLanguage,
-			ModelUsed:       "gpt-3.5-turbo", // can be obtained from LLM client
-			ContextSummary:  GetContextTextFromTVShow(tvShowInfo),
-			TranslationTime: time.Since(startTime),
-			CharCount:       countCharacters(subtitleFile.Lines),
-		},
+		// Metadata: TranslationMetadata{
+		// 	SourceLanguage:  subtitleFile.Language,
+		// 	TargetLanguage:  t.config.TargetLanguage,
+		// 	ModelUsed:       "gpt-3.5-turbo", // can be obtained from LLM client
+		// 	ContextSummary:  GetContextTextFromTVShow(tvShowInfo),
+		// 	TranslationTime: time.Since(startTime),
+		// 	CharCount:       countCharacters(subtitleFile.Lines),
+		// },
 	}
 
 	return result, nil
 }
 
 // translateSubtitleLines translates subtitle lines
-func (t *Translator) translateSubtitleLines(ctx context.Context, contextInfo TVShowInfo, lines []SubtitleLine) ([]string, error) {
-	if t.llmClient == nil {
-		return nil, fmt.Errorf("LLM client not set")
+func (t *Translator) translateSubtitleLines(
+	ctx context.Context,
+	media translator.MediaMeta,
+	lines []subtitle.Line) ([]subtitle.Line, error) {
+	if t.translator == nil {
+		return nil, fmt.Errorf("Translator not set")
 	}
 
 	if len(lines) == 0 {
-		return []string{}, nil
+		return nil, nil
 	}
 
-	// Create batch processing client
-	batchClient, ok := t.llmClient.(*OpenAIClient)
-	if ok {
-		return batchClient.BatchTranslateWithContext(ctx, contextInfo, lines, t.config.TargetLanguage, t.config.BatchSize)
-	}
-
-	// Single line translation for non-batch clients
-	var translations []string
-	for _, line := range lines {
-		result, err := t.llmClient.TranslateWithContext(ctx, contextInfo, []SubtitleLine{line}, t.config.TargetLanguage)
-		if err != nil {
-			return nil, err
-		}
-		if len(result) > 0 {
-			translations = append(translations, result[0])
-		} else {
-			translations = append(translations, line.Text)
-		}
-	}
-
-	return translations, nil
+	return t.translator.BatchTranslate(
+		ctx,
+		media,
+		lines,
+		t.config.TargetLanguage,
+		t.config.BatchSize)
 }
 
 // TranslateMultiple translates multiple subtitle files
@@ -237,7 +220,7 @@ func (t *Translator) GetTranslationPreview(result *TranslationResult, lines int)
 }
 
 // countCharacters calculates total subtitle characters
-func countCharacters(lines []SubtitleLine) int {
+func countCharacters(lines []subtitle.Line) int {
 	total := 0
 	for _, line := range lines {
 		total += len(line.Text)

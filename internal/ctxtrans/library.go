@@ -3,6 +3,10 @@ package ctxtrans
 import (
 	"context"
 	"fmt"
+
+	"github.com/MimeLyc/contextual-sub-translator/internal/llm"
+	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
+	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
 )
 
 // Library provides the main interface for using ctxtrans as a library
@@ -13,6 +17,7 @@ var Library = &ctxtransLibrary{}
 // This struct provides methods for configuring and using the translation functionality
 type ctxtransLibrary struct {
 	defaultConfig TranslatorConfig
+	aiConf        llm.Config
 }
 
 // NewTranslator creates a new translator instance with the provided configuration
@@ -51,36 +56,29 @@ func (l *ctxtransLibrary) NewOpenAIClientWithConfig(config LLMConfig) *OpenAICli
 
 // TranslateFile performs a complete translation of a single subtitle file
 // This is the main high-level interface for single file translation
-func (l *ctxtransLibrary) TranslateFile(ctx context.Context, tvshowNFOPath, subtitlePath, targetLanguage, apiKey string) (*TranslationResult, error) {
+func (l *ctxtransLibrary) TranslateFile(
+	ctx context.Context,
+	tvshowNFOPath,
+	subtitlePath,
+	targetLanguage,
+	apiKey string) (*TranslationResult, error) {
 	// Create translator with default configuration
-	translator, err := l.NewTranslatorWithDefaults(targetLanguage)
+	transSvc, err := l.NewTranslatorWithDefaults(targetLanguage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create translator: %w", err)
 	}
 
+	aiCli, err := llm.NewClient(&l.aiConf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create LLM client: %w", err)
+	}
+
 	// Create and set up LLM client
-	client := l.NewOpenAIClient(apiKey)
-	translator.SetLLMClient(client)
+	client := translator.NewAiTranslator(*aiCli)
+	transSvc.SetTranslator(client)
 
 	// Perform translation
-	return translator.TranslateFile(ctx, tvshowNFOPath, subtitlePath)
-}
-
-// TranslateFiles performs batch translation of multiple subtitle files
-// This is the main high-level interface for batch processing
-func (l *ctxtransLibrary) TranslateFiles(ctx context.Context, tvshowNFOPath string, subtitlePaths []string, targetLanguage, apiKey string) ([]*TranslationResult, error) {
-	// Create translator with default configuration
-	translator, err := l.NewTranslatorWithDefaults(targetLanguage)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create translator: %w", err)
-	}
-
-	// Create and set up LLM client
-	client := l.NewOpenAIClient(apiKey)
-	translator.SetLLMClient(client)
-
-	// Perform batch translation
-	return translator.TranslateMultiple(ctx, tvshowNFOPath, subtitlePaths)
+	return transSvc.TranslateFile(ctx, tvshowNFOPath, subtitlePath)
 }
 
 // QuickTranslate provides a simplified interface for quick single-use translations
@@ -93,8 +91,8 @@ func (l *ctxtransLibrary) QuickTranslate(ctx context.Context, tvshowNFOPath, sub
 
 	// Save result to default location
 	outputPath := l.generateOutputPath(subtitlePath, targetLanguage)
-	writer := NewSubtitleWriter()
-	return writer.WriteSubtitle(outputPath, &result.TranslatedFile)
+	writer := subtitle.NewWriter()
+	return writer.Write(outputPath, &result.TranslatedFile)
 }
 
 // GetLibraryInfo returns information about the library version and capabilities

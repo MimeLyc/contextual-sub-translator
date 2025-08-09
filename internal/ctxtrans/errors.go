@@ -26,7 +26,7 @@ const (
 type CTXTransError struct {
 	Type    ErrorType
 	Message string
-	Context map[string]interface{}
+	Context map[string]any
 	Cause   error
 }
 
@@ -34,7 +34,7 @@ func NewError(errorType ErrorType, message string) *CTXTransError {
 	return &CTXTransError{
 		Type:    errorType,
 		Message: message,
-		Context: make(map[string]interface{}),
+		Context: make(map[string]any),
 	}
 }
 
@@ -42,7 +42,7 @@ func NewErrorWithCause(errorType ErrorType, message string, cause error) *CTXTra
 	return &CTXTransError{
 		Type:    errorType,
 		Message: message,
-		Context: make(map[string]interface{}),
+		Context: make(map[string]any),
 		Cause:   cause,
 	}
 }

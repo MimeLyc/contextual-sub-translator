@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 )
 
 // LLMConfig represents LLM client configuration
@@ -44,7 +46,7 @@ func NewOpenAIClient(config LLMConfig) *OpenAIClient {
 }
 
 // TranslateWithContext translates subtitle lines with context
-func (c *OpenAIClient) TranslateWithContext(ctx context.Context, contextInfo TVShowInfo, subtitleLines []SubtitleLine, targetLanguage string) ([]string, error) {
+func (c *OpenAIClient) TranslateWithContext(ctx context.Context, contextInfo TVShowInfo, subtitleLines []subtitle.Line, targetLanguage string) ([]string, error) {
 	// Build context prompt
 	contextPrompt := c.buildContextPrompt(contextInfo, targetLanguage)
 
@@ -73,7 +75,7 @@ func (c *OpenAIClient) TranslateWithContext(ctx context.Context, contextInfo TVS
 }
 
 // BatchTranslateWithContext translates subtitle lines in batches with context
-func (c *OpenAIClient) BatchTranslateWithContext(ctx context.Context, contextInfo TVShowInfo, subtitleLines []SubtitleLine, targetLanguage string, batchSize int) ([]string, error) {
+func (c *OpenAIClient) BatchTranslateWithContext(ctx context.Context, contextInfo TVShowInfo, subtitleLines []subtitle.Line, targetLanguage string, batchSize int) ([]string, error) {
 	if batchSize <= 0 {
 		batchSize = 50
 	}
@@ -99,7 +101,10 @@ func (c *OpenAIClient) BatchTranslateWithContext(ctx context.Context, contextInf
 }
 
 // buildContextPrompt builds context prompt from TV show information
-func (c *OpenAIClient) buildContextPrompt(contextInfo TVShowInfo, targetLanguage string) string {
+func (c *OpenAIClient) buildContextPrompt(
+	contextInfo TVShowInfo,
+	targetLanguage string,
+) string {
 	var prompt strings.Builder
 
 	prompt.WriteString("You are a professional subtitle translation expert. Please translate the subtitle content into ")
