@@ -35,7 +35,7 @@ func (c aiTranslator) Translate(
 			},
 			{
 				Role:    "user",
-				Content: strings.Join(subtitleTexts, "%line_breaker%"),
+				Content: strings.Join(subtitleTexts, subtitleLineBreaker),
 			},
 		})
 }
@@ -63,7 +63,7 @@ func (c aiTranslator) BatchTranslate(
 		var subtitleTexts []string
 		for _, line := range batch {
 			// Deal with original line breaker in subtitle file to avoid LLM misunderstanding
-			formattedText := strings.ReplaceAll(line.Text, "\n", "$$legacy_lb$$")
+			formattedText := strings.ReplaceAll(line.Text, "\n", inlineBreakerPlaceholder)
 			subtitleTexts = append(subtitleTexts, formattedText)
 		}
 
@@ -126,7 +126,7 @@ func (l aiTranslator) buildContextPrompt(
 	prompt.WriteString("3. Avoid excessively long sentences, maintain readability\n")
 	prompt.WriteString("4. Appropriately localize culturally specific content\n")
 	prompt.WriteString("5. Maintain subtitle time synchronization\n")
-	prompt.WriteString("6. Keep the line break format of the text I sent, leave **any** words surrounded by '%' and '$$' unchanged' .\n")
+	prompt.WriteString("6. Keep the line break format of the text I sent, leave **any** words surrounded by '%%' unchanged' .\n")
 
 	return prompt.String()
 }
@@ -140,13 +140,6 @@ func (l aiTranslator) call(
 		return nil, err
 	}
 	content := resp.Choices[0].Message.Content
-	content = strings.ReplaceAll(content, "$$legacy_lb$$", "\n")
-	return strings.Split(content, "%line_breaker%"), nil
-}
-
-func (l aiTranslator) buildMetaFile(
-	ctx context.Context,
-	messages []llm.Message,
-) (llm.File, error) {
-	return llm.File{}, nil
+	content = strings.ReplaceAll(content, inlineBreakerPlaceholder, "\n")
+	return strings.Split(content, subtitleLineBreaker), nil
 }

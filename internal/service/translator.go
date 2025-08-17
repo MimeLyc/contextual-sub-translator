@@ -1,4 +1,4 @@
-package ctxtrans
+package service
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
+	"golang.org/x/text/language"
 )
 
 // Translator is the core structure for subtitle translator
@@ -22,7 +23,7 @@ type Translator struct {
 
 // TranslatorConfig contains translator configuration
 type TranslatorConfig struct {
-	TargetLanguage     string
+	TargetLanguage     language.Tag
 	BatchSize          int
 	ContextEnabled     bool
 	PreserveFormatting bool
@@ -47,7 +48,10 @@ func (t *Translator) SetTranslator(cli translator.Translator) {
 }
 
 // TranslateFile translates a single subtitle file
-func (t *Translator) TranslateFile(ctx context.Context, tvshowNFOPath, subtitlePath string) (*TranslationResult, error) {
+func (t *Translator) TranslateFile(
+	ctx context.Context,
+	tvshowNFOPath,
+	subtitlePath string) (*TranslationResult, error) {
 	// startTime := time.Now()
 
 	// Read NFO file
@@ -94,14 +98,14 @@ func (t *Translator) TranslateFile(ctx context.Context, tvshowNFOPath, subtitleP
 	result := &TranslationResult{
 		OriginalFile:   *subtitleFile,
 		TranslatedFile: *translatedFile,
-		// Metadata: TranslationMetadata{
-		// 	SourceLanguage:  subtitleFile.Language,
-		// 	TargetLanguage:  t.config.TargetLanguage,
-		// 	ModelUsed:       "gpt-3.5-turbo", // can be obtained from LLM client
-		// 	ContextSummary:  GetContextTextFromTVShow(tvShowInfo),
-		// 	TranslationTime: time.Since(startTime),
-		// 	CharCount:       countCharacters(subtitleFile.Lines),
-		// },
+		Metadata: TranslationMetadata{
+			SourceLanguage: subtitleFile.Language,
+			TargetLanguage: t.config.TargetLanguage,
+			// ModelUsed:      "gpt-3.5-turbo", // can be obtained from LLM client
+			ContextSummary: GetContextTextFromTVShow(tvShowInfo),
+			// TranslationTime: time.Since(startTime),
+			CharCount: countCharacters(subtitleFile.Lines),
+		},
 	}
 
 	return result, nil
@@ -124,7 +128,7 @@ func (t *Translator) translateSubtitleLines(
 		ctx,
 		media,
 		lines,
-		t.config.TargetLanguage,
+		t.config.TargetLanguage.String(),
 		t.config.BatchSize)
 }
 
@@ -226,27 +230,4 @@ func countCharacters(lines []subtitle.Line) int {
 		total += len(line.Text)
 	}
 	return total
-}
-
-// FormatLanguageCode formats language code
-func FormatLanguageCode(code string) string {
-	code = strings.ToLower(strings.TrimSpace(code))
-	switch code {
-	case "zh", "zh-cn", "zh_cn":
-		return "Chinese"
-	case "en":
-		return "English"
-	case "ja":
-		return "Japanese"
-	case "ko":
-		return "Korean"
-	case "fr":
-		return "French"
-	case "de":
-		return "German"
-	case "es":
-		return "Spanish"
-	default:
-		return strings.ToUpper(code)
-	}
 }

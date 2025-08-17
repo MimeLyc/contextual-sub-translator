@@ -1,4 +1,4 @@
-package ctxtrans
+package service
 
 import (
 	"encoding/xml"

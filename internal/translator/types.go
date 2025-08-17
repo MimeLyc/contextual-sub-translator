@@ -7,6 +7,11 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 )
 
+const (
+	subtitleLineBreaker      string = "%%line_breaker%%"
+	inlineBreakerPlaceholder string = "%%inline_breaker%%"
+)
+
 type MediaMeta struct {
 	media.TVShowInfo
 	media.Actor

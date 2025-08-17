@@ -8,12 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/abadojack/whatlanggo"
+	"golang.org/x/text/language"
 )
 
 // DefaultReader is the default subtitle file reader
 type DefaultReader struct{}
 
 // NewReader creates a new subtitle file reader
+// TODO: get reader by subtitle path
 func NewReader() Reader {
 	return &DefaultReader{}
 }
@@ -141,37 +145,31 @@ func parseSRTTime(timeString string) (time.Duration, time.Duration, error) {
 }
 
 // detectLanguage simple language detection based on common characters
-func detectLanguage(lines []Line) string {
+func detectLanguage(lines []Line) language.Tag {
 	if len(lines) == 0 {
-		return "unknown"
+		return language.Und
 	}
 
-	var totalChars int
-	var cjkChars, latinChars int
+	langMap := make(map[string]int)
 
 	for _, line := range lines {
-		for _, r := range line.Text {
-			totalChars++
-			if r >= 0x4E00 && r <= 0x9FFF { // CJK Unified Ideographs
-				cjkChars++
-			} else if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				latinChars++
-			}
+		lang := whatlanggo.DetectLang(line.Text).Iso6391()
+		if _, ok := langMap[lang]; !ok {
+			langMap[lang] = 0
+		}
+
+		langMap[lang]++
+	}
+
+	// Get top language
+	var topLang string
+	var topCount int
+	for lang, count := range langMap {
+		if count > topCount {
+			topLang = lang
+			topCount = count
 		}
 	}
 
-	if totalChars == 0 {
-		return "unknown"
-	}
-
-	cjkRatio := float64(cjkChars) / float64(totalChars)
-	latinRatio := float64(latinChars) / float64(totalChars)
-
-	if cjkRatio > 0.3 {
-		return "zh" // Chinese
-	} else if latinRatio > 0.5 {
-		return "en" // English
-	}
-
-	return "unknown"
+	return language.All.Make(topLang)
 }

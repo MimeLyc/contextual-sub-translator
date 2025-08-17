@@ -1,5 +1,7 @@
 package media
 
+import "github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
+
 // TVShowInfo represents TV show information parsed from tvshow.nfo file
 type TVShowInfo struct {
 	Title         string   `xml:"title"`         // show title
@@ -20,4 +22,19 @@ type Actor struct {
 	Name  string `xml:"name"`
 	Role  string `xml:"role"`
 	Order int    `xml:"order"`
+}
+
+type Operator interface {
+	ReadSubtitleDescription() (subtitle.Descriptions, error)
+	ExtractSubtitle(
+		toDir string,
+		name string,
+	) (string, error)
+	DefExtractSubtitle() (string, error)
+}
+
+func NewOperator(
+	mediaPath string,
+) Operator {
+	return NewFfmpeg(mediaPath)
 }

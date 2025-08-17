@@ -1,4 +1,4 @@
-package ctxtrans
+package service
 
 import (
 	"errors"
@@ -173,7 +173,7 @@ func Must(err error, message string) {
 func SafeExecute(fn func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = NewError(ErrUnknown, fmt.Sprintf("运行时错误: %v", r))
+			err = NewError(ErrUnknown, fmt.Sprintf("runtime error: %v", r))
 		}
 	}()
 

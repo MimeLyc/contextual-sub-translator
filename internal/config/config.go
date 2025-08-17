@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"golang.org/x/text/language"
 )
 
 // Config holds all application configuration
@@ -43,6 +45,13 @@ type Config struct {
 
 	// System Configuration
 	System SystemConfig `json:"system"`
+
+	// Translate Configuration
+	Translate TranslateConfig `json:"translate"`
+}
+
+type TranslateConfig struct {
+	TargetLanguage language.Tag `json:"target_language"`
 }
 
 // LLMConfig holds the configuration for LLM client
@@ -65,6 +74,26 @@ type MediaConfig struct {
 	TeleplayDir    string `json:"teleplay_dir"`
 	ShowDir        string `json:"show_dir"`
 	DocumentaryDir string `json:"documentary_dir"`
+}
+
+func (c MediaConfig) MediaPaths() []string {
+	ret := make([]string, 0)
+	if c.MovieDir != "" {
+		ret = append(ret, c.MovieDir)
+	}
+	if c.AnimationDir != "" {
+		ret = append(ret, c.AnimationDir)
+	}
+	if c.TeleplayDir != "" {
+		ret = append(ret, c.TeleplayDir)
+	}
+	if c.ShowDir != "" {
+		ret = append(ret, c.ShowDir)
+	}
+	if c.DocumentaryDir != "" {
+		ret = append(ret, c.DocumentaryDir)
+	}
+	return ret
 }
 
 // SystemConfig holds the system configuration

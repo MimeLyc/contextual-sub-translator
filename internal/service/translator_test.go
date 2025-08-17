@@ -1,4 +1,4 @@
-package ctxtrans
+package service
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"golang.org/x/text/language"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/llm"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
@@ -101,7 +102,7 @@ func createDANDANSubtitleFile() *subtitle.File {
 				Text:      "How many times do you have to do this before you're satisfied?",
 			},
 		},
-		Language: "en",
+		Language: language.English,
 		Format:   "SRT",
 	}
 }
@@ -140,7 +141,7 @@ func TestTranslateFile_Success_WithContext_RealData(t *testing.T) {
 	mockTrans := &mockTranslator{}
 
 	config := TranslatorConfig{
-		TargetLanguage:     "Chinese",
+		TargetLanguage:     language.Chinese,
 		BatchSize:          10,
 		ContextEnabled:     true,
 		PreserveFormatting: true,
@@ -201,7 +202,7 @@ func TestTranslateFile_Success_WithoutContext_RealData(t *testing.T) {
 	mockTrans := &mockTranslator{}
 
 	config := TranslatorConfig{
-		TargetLanguage: "Chinese",
+		TargetLanguage: language.Chinese,
 		BatchSize:      10,
 		ContextEnabled: false, // Context disabled
 		OutputPath:     "",    // No output path
@@ -252,7 +253,7 @@ func TestTranslateFile_NFOReadError(t *testing.T) {
 	mockTrans := &mockTranslator{}
 
 	config := TranslatorConfig{
-		TargetLanguage: "Chinese",
+		TargetLanguage: language.Chinese,
 		ContextEnabled: true,
 	}
 
@@ -294,7 +295,7 @@ func TestTranslateFile_SubtitleReadError(t *testing.T) {
 	mockTrans := &mockTranslator{}
 
 	config := TranslatorConfig{
-		TargetLanguage: "Chinese",
+		TargetLanguage: language.Chinese,
 		ContextEnabled: true,
 	}
 
@@ -339,7 +340,7 @@ func TestTranslateFile_TranslationError(t *testing.T) {
 	mockTrans := &mockTranslator{}
 
 	config := TranslatorConfig{
-		TargetLanguage: "Chinese",
+		TargetLanguage: language.Chinese,
 		BatchSize:      10,
 		ContextEnabled: true,
 	}
@@ -387,7 +388,7 @@ func TestTranslateFile_WriteError(t *testing.T) {
 	mockTrans := &mockTranslator{}
 
 	config := TranslatorConfig{
-		TargetLanguage: "Chinese",
+		TargetLanguage: language.Chinese,
 		BatchSize:      10,
 		ContextEnabled: true,
 		OutputPath:     "/readonly/output.srt",
@@ -437,7 +438,7 @@ func TestTranslateFile_NoTranslatorSet(t *testing.T) {
 	mockSubWriter := &mockSubtitleWriter{}
 
 	config := TranslatorConfig{
-		TargetLanguage: "Chinese",
+		TargetLanguage: language.Chinese,
 		ContextEnabled: true,
 	}
 
@@ -515,7 +516,7 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 
 	// Create and configure translator
 	translatorConfig := TranslatorConfig{
-		TargetLanguage: "Chinese",
+		TargetLanguage: language.Chinese,
 		BatchSize:      10, // Small batch for testing
 		ContextEnabled: true,
 		OutputPath:     outputPath,
@@ -558,7 +559,7 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 func TestSetTranslator(t *testing.T) {
 	// Arrange
 	config := TranslatorConfig{
-		TargetLanguage: "Chinese",
+		TargetLanguage: language.Chinese,
 	}
 
 	translator, err := NewTranslator(config)
