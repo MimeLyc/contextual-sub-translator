@@ -19,15 +19,46 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/pkg/file"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/icron"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
+	"github.com/robfig/cron/v3"
 )
 
 type transService struct {
 	cfg            config.Config
 	lastTrigerTime time.Time
 	cronExpr       string
+	cron           *cron.Cron
 }
 
-func (s transService) schedule(
+func NewRunnableTransService(
+	cfg config.Config,
+	cron *cron.Cron,
+) transService {
+	return transService{
+		cfg:      cfg,
+		cronExpr: cfg.Translate.CronExpr,
+		cron:     cron,
+	}
+}
+
+func (s transService) Schedule(
+	ctx context.Context,
+) error {
+	log.Info("Run TransService")
+
+	runFunc := func() {
+		for _, dir := range s.cfg.Media.MediaPaths() {
+			log.Info("Run in dir %s", dir)
+			err := s.run(ctx, dir)
+			if err != nil {
+				log.Error("Failed to run in dir %s: %v", dir, err)
+			}
+		}
+	}
+	_, err := s.cron.AddFunc(s.cronExpr, runFunc)
+	return err
+}
+
+func (s transService) run(
 	ctx context.Context,
 	dir string,
 ) error {

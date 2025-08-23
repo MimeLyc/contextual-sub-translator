@@ -1,10 +1,12 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/config"
+	"github.com/MimeLyc/contextual-sub-translator/internal/service"
+	"github.com/robfig/cron/v3"
 )
 
 func main() {
@@ -13,5 +15,12 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to load configuration:", err)
 	}
-	fmt.Println(cfg)
+
+	cron := cron.New()
+	cronSvc := service.NewRunnableTransService(*cfg, cron)
+
+	err = cronSvc.Schedule(context.Background())
+	if err != nil {
+		panic(err)
+	}
 }

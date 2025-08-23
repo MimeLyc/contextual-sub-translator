@@ -52,6 +52,7 @@ type Config struct {
 
 type TranslateConfig struct {
 	TargetLanguage language.Tag `json:"target_language"`
+	CronExpr       string       `json:"cron_expr"`
 }
 
 // LLMConfig holds the configuration for LLM client
@@ -132,6 +133,10 @@ func New(opts ...Option) (*Config, error) {
 			PGID: getEnvInt("PGID", 1000),
 			TZ:   getEnvString("TZ", "UTC"),
 			Zone: getEnvString("ZONE", "local"),
+		},
+		Translate: TranslateConfig{
+			TargetLanguage: language.Chinese,
+			CronExpr:       getEnvString("CRON_EXPR", "0 0 * * *"),
 		},
 	}
 
