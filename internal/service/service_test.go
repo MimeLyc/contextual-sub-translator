@@ -60,7 +60,7 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		service         defService
+		service         transService
 		dir             string
 		expectedBundles int
 		expectedError   bool
@@ -68,7 +68,7 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 	}{
 		{
 			name: "find all bundles without time filter",
-			service: defService{
+			service: transService{
 				cfg:            config.Config{},
 				lastTrigerTime: time.Now().Add(-24 * time.Hour), // 24 hours ago
 				cronExpr:       "",                              // no cron
@@ -111,7 +111,7 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 		},
 		{
 			name: "find bundles with time filter",
-			service: defService{
+			service: transService{
 				cfg:            config.Config{},
 				lastTrigerTime: time.Now().Add(-1 * time.Hour), // 1 hour ago
 				cronExpr:       "",
@@ -126,7 +126,7 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 		},
 		{
 			name: "find bundles with future time filter",
-			service: defService{
+			service: transService{
 				cfg:            config.Config{},
 				lastTrigerTime: time.Now().Add(1 * time.Hour), // 1 hour in future
 				cronExpr:       "",
@@ -141,7 +141,7 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 		},
 		{
 			name: "nonexistent directory",
-			service: defService{
+			service: transService{
 				cfg:            config.Config{},
 				lastTrigerTime: time.Time{},
 				cronExpr:       "0 0 * * *",
@@ -153,7 +153,7 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 		},
 		{
 			name: "recursive search in subdirectories",
-			service: defService{
+			service: transService{
 				cfg:            config.Config{},
 				lastTrigerTime: time.Now().Add(-24 * time.Hour), // 24 hours ago
 				cronExpr:       "",
@@ -390,7 +390,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 	tests := []struct {
 		name            string
 		setupFiles      func(t *testing.T, rootDir string)
-		service         defService
+		service         transService
 		expectedCount   int
 		expectedError   bool
 		validateContent func(t *testing.T, bundles []MediaBundle)
@@ -413,7 +413,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 				err = os.WriteFile(nfoPath, []byte("<tvshow><title>Test Show</title></tvshow>"), 0644)
 				require.NoError(t, err)
 			},
-			service: defService{
+			service: transService{
 				cfg: config.Config{
 					Translate: config.TranslateConfig{
 						TargetLanguage: language.MustParse("zh-CN"),
@@ -441,7 +441,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 				err = os.WriteFile(subPath, []byte(mockCNSubtitleContent), 0644)
 				require.NoError(t, err)
 			},
-			service: defService{
+			service: transService{
 				cfg: config.Config{
 					Translate: config.TranslateConfig{
 						TargetLanguage: language.MustParse("zh-CN"),
@@ -469,7 +469,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 				err = os.WriteFile(subPath, []byte(mockSubtitleContent), 0644)
 				require.NoError(t, err)
 			},
-			service: defService{
+			service: transService{
 				cfg: config.Config{
 					Translate: config.TranslateConfig{
 						TargetLanguage: language.MustParse("zh-CN"),
@@ -497,7 +497,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 				err = os.WriteFile(nfoPath, []byte("<tvshow><title>Test Show</title></tvshow>"), 0644)
 				require.NoError(t, err)
 			},
-			service: defService{
+			service: transService{
 				cfg: config.Config{
 					Translate: config.TranslateConfig{
 						TargetLanguage: language.MustParse("zh-CN"),
@@ -538,7 +538,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 				err = os.WriteFile(nfoPath, []byte("<tvshow><title>Multi Lang Show</title></tvshow>"), 0644)
 				require.NoError(t, err)
 			},
-			service: defService{
+			service: transService{
 				cfg: config.Config{
 					Translate: config.TranslateConfig{
 						TargetLanguage: language.MustParse("zh-CN"),
@@ -560,7 +560,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 			setupFiles: func(t *testing.T, rootDir string) {
 				// Don't create any files
 			},
-			service: defService{
+			service: transService{
 				cfg: config.Config{
 					Translate: config.TranslateConfig{
 						TargetLanguage: language.MustParse("zh-CN"),
@@ -577,7 +577,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 		},
 		{
 			name: "handle nonexistent directory",
-			service: defService{
+			service: transService{
 				cfg: config.Config{
 					Translate: config.TranslateConfig{
 						TargetLanguage: language.MustParse("zh-CN"),
@@ -629,7 +629,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 func TestRealFindTargetMediaTuplesInDir(t *testing.T) {
 	dir := "..."
 
-	service := defService{
+	service := transService{
 		cfg: config.Config{
 			Translate: config.TranslateConfig{
 				TargetLanguage: language.MustParse("zh-CN"),

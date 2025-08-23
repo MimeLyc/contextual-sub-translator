@@ -1,12 +1,20 @@
 package service
 
 import (
+	"context"
 	"time"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"golang.org/x/text/language"
 )
+
+type Translator interface {
+	Translate(
+		ctx context.Context,
+		tvshowNFOPath string,
+	) (*TranslationResult, error)
+}
 
 // TVShowInfo represents TV show information parsed from tvshow.nfo file
 type TVShowInfo struct {
@@ -63,6 +71,7 @@ type NFOReader interface {
 	ReadTVShowInfo(path string) (*media.TVShowInfo, error)
 }
 
+// TODO: return suitable tv show info
 type MediaBundle struct {
 	MediaFile     string
 	NFOFiles      []media.TVShowInfo

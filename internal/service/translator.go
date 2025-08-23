@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
@@ -12,58 +12,55 @@ import (
 	"golang.org/x/text/language"
 )
 
-// Translator is the core structure for subtitle translator
-type Translator struct {
-	nfoReader      NFOReader
-	subtitleReader subtitle.Reader
+// TranslatorConfig contains translator configuration
+type TranslatorConfig struct {
+	TargetLanguage language.Tag
+	BatchSize      int
+	ContextEnabled bool
+	InputPath      string
+	SubtitleFile   *subtitle.File
+
+	OutputDir  string
+	OutputName string
+	// BackupOriginal bool
+	Verbose bool
+}
+
+func (c TranslatorConfig) OutputPath() string {
+	outputDir := c.OutputDir
+	if outputDir == "" {
+		outputDir = filepath.Dir(c.InputPath)
+	}
+	outputName := c.OutputName
+	if outputName == "" {
+		base := filepath.Base(c.InputPath)
+		ext := filepath.Ext(c.InputPath)
+		outputName = filepath.Join(base, ".ctxtrans."+c.TargetLanguage.String()+ext)
+	}
+	return filepath.Join(outputDir, outputName)
+}
+
+type SubTranslator struct {
+	nfoReader NFOReader
+
 	subtitleWriter subtitle.Writer
 	translator     translator.Translator
 	config         TranslatorConfig
+	file           *subtitle.File
 }
 
-// TranslatorConfig contains translator configuration
-type TranslatorConfig struct {
-	TargetLanguage     language.Tag
-	BatchSize          int
-	ContextEnabled     bool
-	PreserveFormatting bool
-	OutputPath         string
-	BackupOriginal     bool
-	Verbose            bool
-}
-
-// NewTranslator creates a new translator instance
-func NewTranslator(config TranslatorConfig) (*Translator, error) {
-	return &Translator{
-		nfoReader:      NewNFOReader(),
-		subtitleReader: subtitle.NewReader(),
-		subtitleWriter: subtitle.NewWriter(),
-		config:         config,
-	}, nil
-}
-
-// SetLLMClient sets the LLM client
-func (t *Translator) SetTranslator(cli translator.Translator) {
-	t.translator = cli
-}
-
-// TranslateFile translates a single subtitle file
-func (t *Translator) TranslateFile(
+// Translate translates a single subtitle file
+func (t *SubTranslator) Translate(
 	ctx context.Context,
-	tvshowNFOPath,
-	subtitlePath string) (*TranslationResult, error) {
-	// startTime := time.Now()
+	tvshowNFOPath string,
+) (*TranslationResult, error) {
+	// setup outputPath
+	outputPath := t.config.OutputPath()
 
 	// Read NFO file
 	tvShowInfo, err := t.nfoReader.ReadTVShowInfo(tvshowNFOPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read NFO file: %w", err)
-	}
-
-	// Read subtitle file
-	subtitleFile, err := t.subtitleReader.Read(subtitlePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read subtitle file: %w", err)
 	}
 
 	// Use empty info if context is not enabled
@@ -75,7 +72,7 @@ func (t *Translator) TranslateFile(
 	translations, err := t.translateSubtitleLines(
 		ctx, translator.MediaMeta{
 			TVShowInfo: contextInfo,
-		}, subtitleFile.Lines)
+		}, t.file.Lines)
 	if err != nil {
 		return nil, fmt.Errorf("failed to translate subtitles: %w", err)
 	}
@@ -84,27 +81,27 @@ func (t *Translator) TranslateFile(
 	translatedFile := &subtitle.File{
 		Lines:    translations,
 		Language: t.config.TargetLanguage,
-		Format:   subtitleFile.Format,
+		Format:   t.file.Format,
 	}
 
 	// Save translation results if output path is specified
-	if t.config.OutputPath != "" {
-		if err := t.subtitleWriter.Write(t.config.OutputPath, translatedFile); err != nil {
+	if outputPath != "" {
+		if err := t.subtitleWriter.Write(t.config.OutputDir, translatedFile); err != nil {
 			return nil, fmt.Errorf("failed to save translation results: %w", err)
 		}
 	}
 
 	// Create results
 	result := &TranslationResult{
-		OriginalFile:   *subtitleFile,
+		OriginalFile:   *t.file,
 		TranslatedFile: *translatedFile,
 		Metadata: TranslationMetadata{
-			SourceLanguage: subtitleFile.Language,
+			SourceLanguage: t.file.Language,
 			TargetLanguage: t.config.TargetLanguage,
 			// ModelUsed:      "gpt-3.5-turbo", // can be obtained from LLM client
 			ContextSummary: GetContextTextFromTVShow(tvShowInfo),
 			// TranslationTime: time.Since(startTime),
-			CharCount: countCharacters(subtitleFile.Lines),
+			CharCount: countCharacters(t.file.Lines),
 		},
 	}
 
@@ -112,7 +109,7 @@ func (t *Translator) TranslateFile(
 }
 
 // translateSubtitleLines translates subtitle lines
-func (t *Translator) translateSubtitleLines(
+func (t *SubTranslator) translateSubtitleLines(
 	ctx context.Context,
 	media translator.MediaMeta,
 	lines []subtitle.Line) ([]subtitle.Line, error) {
@@ -132,59 +129,36 @@ func (t *Translator) translateSubtitleLines(
 		t.config.BatchSize)
 }
 
-// TranslateMultiple translates multiple subtitle files
-func (t *Translator) TranslateMultiple(ctx context.Context, tvshowNFOPath string, subtitlePaths []string) ([]*TranslationResult, error) {
-	var results []*TranslationResult
-
-	for _, subtitlePath := range subtitlePaths {
-		if t.config.Verbose {
-			log.Printf("Translating file: %s", subtitlePath)
-		}
-
-		result, err := t.TranslateFile(ctx, tvshowNFOPath, subtitlePath)
-		if err != nil {
-			if t.config.Verbose {
-				log.Printf("Failed to translate file %s: %v", subtitlePath, err)
-			}
-			continue
-		}
-
-		results = append(results, result)
-
-		if t.config.Verbose {
-			log.Printf("Successfully translated %s: %d subtitle lines", subtitlePath, len(result.TranslatedFile.Lines))
-		}
-	}
-
-	return results, nil
+// FileTranslator is the core structure for subtitle translator
+type FileTranslator struct {
+	nfoReader      NFOReader
+	subtitleReader subtitle.Reader
+	subtitleWriter subtitle.Writer
+	translator     translator.Translator
+	config         TranslatorConfig
 }
 
-// ValidateInputs validates input file existence
-func (t *Translator) ValidateInputs(tvshowNFOPath, subtitlePath string) error {
-	if tvshowNFOPath == "" {
-		return fmt.Errorf("NFO file path cannot be empty")
-	}
-	if subtitlePath == "" {
-		return fmt.Errorf("subtitle file path cannot be empty")
-	}
-
-	return nil
-}
-
-// BackupFile backs up original file
-func (t *Translator) BackupFile(originalPath string) (string, error) {
-	if !t.config.BackupOriginal {
-		return "", nil
+// Translate translates a single subtitle file
+func (t *FileTranslator) Translate(
+	ctx context.Context,
+	tvshowNFOPath string,
+) (*TranslationResult, error) {
+	// Read subtitle file
+	subtitleFile, err := t.subtitleReader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read subtitle file: %w", err)
 	}
 
-	backupPath := originalPath + ".backup"
-	// Should implement actual file backup logic here
-	// Simplified version returns backup path only
-	return backupPath, nil
+	t.config.SubtitleFile = subtitleFile
+	subTrans, err := NewTranslator(
+		t.config,
+		t.translator,
+	)
+	return subTrans.Translate(ctx, tvshowNFOPath)
 }
 
 // PrintTranslationReport prints translation report
-func (t *Translator) PrintTranslationReport(result *TranslationResult) {
+func (t *FileTranslator) PrintTranslationReport(result *TranslationResult) {
 	fmt.Println("=== Translation Report ===")
 	fmt.Printf("Source Language: %s\n", result.Metadata.SourceLanguage)
 	fmt.Printf("Target Language: %s\n", result.Metadata.TargetLanguage)
@@ -199,7 +173,7 @@ func (t *Translator) PrintTranslationReport(result *TranslationResult) {
 }
 
 // GetTranslationPreview gets translation preview (first 5 lines)
-func (t *Translator) GetTranslationPreview(result *TranslationResult, lines int) string {
+func (t *FileTranslator) GetTranslationPreview(result *TranslationResult, lines int) string {
 	if lines <= 0 {
 		lines = 5
 	}
@@ -221,6 +195,29 @@ func (t *Translator) GetTranslationPreview(result *TranslationResult, lines int)
 	}
 
 	return sb.String()
+}
+
+// NewTranslator creates a new translator instance
+// TODO validation
+func NewTranslator(
+	config TranslatorConfig,
+	cli translator.Translator,
+) (Translator, error) {
+	if config.SubtitleFile != nil {
+		return &SubTranslator{
+			nfoReader:      NewNFOReader(),
+			subtitleWriter: subtitle.NewWriter(),
+			config:         config,
+			translator:     cli,
+		}, nil
+	}
+	return &FileTranslator{
+		nfoReader:      NewNFOReader(),
+		subtitleReader: subtitle.NewReader(config.InputPath),
+		subtitleWriter: subtitle.NewWriter(),
+		config:         config,
+		translator:     cli,
+	}, nil
 }
 
 // countCharacters calculates total subtitle characters

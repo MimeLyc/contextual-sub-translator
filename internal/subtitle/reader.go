@@ -14,25 +14,30 @@ import (
 )
 
 // DefaultReader is the default subtitle file reader
-type DefaultReader struct{}
+type DefaultReader struct {
+	path string
+}
 
 // NewReader creates a new subtitle file reader
-// TODO: get reader by subtitle path
-func NewReader() Reader {
-	return &DefaultReader{}
+func NewReader(
+	path string,
+) Reader {
+	return &DefaultReader{
+		path: path,
+	}
 }
 
 // ReadSubtitle reads subtitle file
-func (r *DefaultReader) Read(path string) (*File, error) {
-	if !strings.HasSuffix(strings.ToLower(path), ".srt") {
-		return nil, fmt.Errorf("only SRT format subtitle files are supported: %s", path)
+func (r *DefaultReader) Read() (*File, error) {
+	if !strings.HasSuffix(strings.ToLower(r.path), ".srt") {
+		return nil, fmt.Errorf("only SRT format subtitle files are supported: %s", r.path)
 	}
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return nil, fmt.Errorf("subtitle file does not exist: %s", path)
+	if _, err := os.Stat(r.path); os.IsNotExist(err) {
+		return nil, fmt.Errorf("subtitle file does not exist: %s", r.path)
 	}
 
-	file, err := os.Open(path)
+	file, err := os.Open(r.path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open subtitle file: %w", err)
 	}

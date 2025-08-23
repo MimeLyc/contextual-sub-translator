@@ -15,6 +15,7 @@ type TVShowInfo struct {
 	Aired         string   `xml:"aired"`         // air date
 	Year          int      `xml:"year"`          // year
 	Season        int      `xml:"season"`        // current season
+	Path          string
 }
 
 // Actor represents actor information

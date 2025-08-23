@@ -59,7 +59,12 @@ func (r *DefaultNFOReader) ReadTVShowInfo(path string) (*media.TVShowInfo, error
 		return nil, fmt.Errorf("failed to parse XML: %w", err)
 	}
 
-	return r.convertToTVShowInfo(xmlShow), nil
+	shows, err := r.convertToTVShowInfo(xmlShow), nil
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert XML to TVShowInfo: %w", err)
+	}
+	shows.Path = path
+	return shows, nil
 }
 
 // convertToTVShowInfo converts XML structure to internal structure

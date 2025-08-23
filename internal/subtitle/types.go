@@ -9,7 +9,7 @@ import (
 
 // Reader is the interface for reading subtitle files
 type Reader interface {
-	Read(path string) (*File, error)
+	Read() (*File, error)
 }
 
 // Writer is the interface for writing subtitle files

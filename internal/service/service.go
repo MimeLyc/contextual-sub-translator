@@ -12,20 +12,72 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/config"
+	"github.com/MimeLyc/contextual-sub-translator/internal/llm"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
+	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/file"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/icron"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
 )
 
-type defService struct {
+type transService struct {
 	cfg            config.Config
 	lastTrigerTime time.Time
 	cronExpr       string
 }
 
-func (s defService) findTargetMediaTuplesInDir(
+func (s transService) schedule(
+	ctx context.Context,
+	dir string,
+) error {
+	toTrans, err := s.findTargetMediaTuplesInDir(ctx, dir)
+	if err != nil {
+		log.Error("Failed to find target media tuples in dir %s: %v", dir, err)
+		return err
+	}
+
+	llmClient, err := llm.NewClient(&llm.Config{
+		APIKey:      s.cfg.LLM.APIKey,
+		APIURL:      s.cfg.LLM.APIURL,
+		Model:       s.cfg.LLM.Model,
+		MaxTokens:   s.cfg.LLM.MaxTokens,
+		Temperature: s.cfg.LLM.Temperature,
+	})
+	if err != nil {
+		log.Error("Failed to create LLM client: %v", err)
+		return err
+	}
+
+	aitranslator := translator.NewAiTranslator(*llmClient)
+
+	for _, bundle := range toTrans {
+		targetSub := bundle.SubtitleFiles[0]
+		transLator, err := NewTranslator(
+			TranslatorConfig{
+				TargetLanguage: s.cfg.Translate.TargetLanguage,
+				ContextEnabled: true,
+				SubtitleFile:   &targetSub,
+			},
+			aitranslator,
+		)
+		if err != nil {
+			log.Error("Failed to create translator: %v", err)
+			return err
+		}
+
+		// TODO: check if nfo file exists
+		if res, err := transLator.Translate(ctx, bundle.NFOFiles[0].Path); err != nil {
+			log.Error("Failed to translate subtitle media %s: %v", bundle.MediaFile, err)
+			return err
+		} else {
+			log.Info("Translated subtitle media %s: %v", bundle.MediaFile, res)
+		}
+	}
+	return nil
+}
+
+func (s transService) findTargetMediaTuplesInDir(
 	ctx context.Context,
 	dir string,
 ) (ret []MediaBundle, err error) {
@@ -77,7 +129,7 @@ func (s defService) findTargetMediaTuplesInDir(
 				log.Error("Failed to extract subtitle from media file %s: %v", bundle.MediaFile, err)
 				continue
 			}
-			sub, err := subtitle.NewReader().Read(output)
+			sub, err := subtitle.NewReader(output).Read()
 			if err != nil {
 				log.Error("Failed to read subtitle file %s: %v", output, err)
 				continue
@@ -110,14 +162,14 @@ func containTargetSubtitle(subtitles []subtitle.File, targetLanguage language.Ta
 	return false
 }
 
-func (s defService) readSubtitleFiles(
+func (s transService) readSubtitleFiles(
 	ctx context.Context,
 	paths []string,
 ) ([]subtitle.File, error) {
 	ret := make([]subtitle.File, 0, len(paths))
 
 	for _, path := range paths {
-		file, err := subtitle.NewReader().Read(path)
+		file, err := subtitle.NewReader(path).Read()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read subtitle file %s: %w", path, err)
 		}
@@ -127,7 +179,7 @@ func (s defService) readSubtitleFiles(
 	return ret, nil
 }
 
-func (s defService) findSourceBundlesInDir(
+func (s transService) findSourceBundlesInDir(
 	_ context.Context,
 	dir string,
 ) ([]MediaPathBundle, error) {
@@ -280,7 +332,7 @@ func isMediaFile(ext string) bool {
 	return slices.Contains(mediaExts, ext)
 }
 
-func (s defService) startTime() (time.Time, error) {
+func (s transService) startTime() (time.Time, error) {
 	if s.lastTrigerTime.IsZero() {
 		cronSchedule, err := icron.GetTriggerInfo(s.cronExpr, time.Now())
 		if err != nil {

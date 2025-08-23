@@ -33,8 +33,8 @@ type mockSubtitleReader struct {
 	mock.Mock
 }
 
-func (m *mockSubtitleReader) Read(path string) (*subtitle.File, error) {
-	args := m.Called(path)
+func (m *mockSubtitleReader) Read() (*subtitle.File, error) {
+	args := m.Called()
 	return args.Get(0).(*subtitle.File), args.Error(1)
 }
 
@@ -141,16 +141,14 @@ func TestTranslateFile_Success_WithContext_RealData(t *testing.T) {
 	mockTrans := &mockTranslator{}
 
 	config := TranslatorConfig{
-		TargetLanguage:     language.Chinese,
-		BatchSize:          10,
-		ContextEnabled:     true,
-		PreserveFormatting: true,
-		OutputPath:         "/tmp/output.srt",
-		BackupOriginal:     false,
-		Verbose:            false,
+		TargetLanguage: language.Chinese,
+		BatchSize:      10,
+		ContextEnabled: true,
+		OutputDir:      "/tmp/output.srt",
+		Verbose:        false,
 	}
 
-	ctxtrans := &Translator{
+	ctxtrans := &FileTranslator{
 		nfoReader:      mockNFO,
 		subtitleReader: mockSubReader,
 		subtitleWriter: mockSubWriter,
@@ -173,7 +171,7 @@ func TestTranslateFile_Success_WithContext_RealData(t *testing.T) {
 	mockSubWriter.On("Write", "/tmp/output.srt", mock.AnythingOfType("*subtitle.File")).Return(nil)
 
 	// Act
-	result, err := ctxtrans.TranslateFile(ctx, nfoPath, subtitlePath)
+	result, err := ctxtrans.Translate(ctx, nfoPath)
 
 	// Assert
 	assert.NoError(t, err)
@@ -205,10 +203,10 @@ func TestTranslateFile_Success_WithoutContext_RealData(t *testing.T) {
 		TargetLanguage: language.Chinese,
 		BatchSize:      10,
 		ContextEnabled: false, // Context disabled
-		OutputPath:     "",    // No output path
+		OutputDir:      "",    // No output path
 	}
 
-	ctxtrans := &Translator{
+	ctxtrans := &FileTranslator{
 		nfoReader:      mockNFO,
 		subtitleReader: mockSubReader,
 		subtitleWriter: mockSubWriter,
@@ -231,7 +229,7 @@ func TestTranslateFile_Success_WithoutContext_RealData(t *testing.T) {
 	mockTrans.On("BatchTranslate", ctx, translator.MediaMeta{TVShowInfo: media.TVShowInfo{}}, testSubtitleFile.Lines, "Chinese", 10).Return(testTranslatedLines, nil)
 
 	// Act
-	result, err := ctxtrans.TranslateFile(ctx, nfoPath, subtitlePath)
+	result, err := ctxtrans.Translate(ctx, nfoPath)
 
 	// Assert
 	assert.NoError(t, err)
@@ -252,12 +250,20 @@ func TestTranslateFile_NFOReadError(t *testing.T) {
 	mockSubWriter := &mockSubtitleWriter{}
 	mockTrans := &mockTranslator{}
 
+	ctx := context.Background()
+	nfoPath := "testdata/data/nonexistent.nfo"
+	subtitlePath := "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt"
+
 	config := TranslatorConfig{
 		TargetLanguage: language.Chinese,
 		ContextEnabled: true,
+		InputPath:      subtitlePath,
 	}
 
-	translator := &Translator{
+	// Set up expectations
+	mockNFO.On("ReadTVShowInfo", nfoPath).Return((*media.TVShowInfo)(nil), errors.New("NFO file not found"))
+
+	translator := &FileTranslator{
 		nfoReader:      mockNFO,
 		subtitleReader: mockSubReader,
 		subtitleWriter: mockSubWriter,
@@ -265,15 +271,8 @@ func TestTranslateFile_NFOReadError(t *testing.T) {
 		config:         config,
 	}
 
-	ctx := context.Background()
-	nfoPath := "testdata/data/nonexistent.nfo"
-	subtitlePath := "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt"
-
-	// Set up expectations
-	mockNFO.On("ReadTVShowInfo", nfoPath).Return((*media.TVShowInfo)(nil), errors.New("NFO file not found"))
-
 	// Act
-	result, err := translator.TranslateFile(ctx, nfoPath, subtitlePath)
+	result, err := translator.Translate(ctx, nfoPath)
 
 	// Assert
 	assert.Error(t, err)
@@ -299,7 +298,7 @@ func TestTranslateFile_SubtitleReadError(t *testing.T) {
 		ContextEnabled: true,
 	}
 
-	translator := &Translator{
+	translator := &FileTranslator{
 		nfoReader:      mockNFO,
 		subtitleReader: mockSubReader,
 		subtitleWriter: mockSubWriter,
@@ -318,7 +317,7 @@ func TestTranslateFile_SubtitleReadError(t *testing.T) {
 	mockSubReader.On("Read", subtitlePath).Return((*subtitle.File)(nil), errors.New("subtitle file not found"))
 
 	// Act
-	result, err := translator.TranslateFile(ctx, nfoPath, subtitlePath)
+	result, err := translator.Translate(ctx, nfoPath)
 
 	// Assert
 	assert.Error(t, err)
@@ -345,7 +344,7 @@ func TestTranslateFile_TranslationError(t *testing.T) {
 		ContextEnabled: true,
 	}
 
-	translator := &Translator{
+	translator := &FileTranslator{
 		nfoReader:      mockNFO,
 		subtitleReader: mockSubReader,
 		subtitleWriter: mockSubWriter,
@@ -366,7 +365,7 @@ func TestTranslateFile_TranslationError(t *testing.T) {
 	mockTrans.On("BatchTranslate", ctx, mock.AnythingOfType("translator.MediaMeta"), testSubtitleFile.Lines, "Chinese", 10).Return(([]subtitle.Line)(nil), errors.New("LLM API error: rate limit exceeded"))
 
 	// Act
-	result, err := translator.TranslateFile(ctx, nfoPath, subtitlePath)
+	result, err := translator.Translate(ctx, nfoPath)
 
 	// Assert
 	assert.Error(t, err)
@@ -391,10 +390,10 @@ func TestTranslateFile_WriteError(t *testing.T) {
 		TargetLanguage: language.Chinese,
 		BatchSize:      10,
 		ContextEnabled: true,
-		OutputPath:     "/readonly/output.srt",
+		OutputDir:      "/readonly/output.srt",
 	}
 
-	translator := &Translator{
+	translator := &FileTranslator{
 		nfoReader:      mockNFO,
 		subtitleReader: mockSubReader,
 		subtitleWriter: mockSubWriter,
@@ -417,7 +416,7 @@ func TestTranslateFile_WriteError(t *testing.T) {
 	mockSubWriter.On("Write", "/readonly/output.srt", mock.AnythingOfType("*subtitle.File")).Return(errors.New("write permission denied"))
 
 	// Act
-	result, err := translator.TranslateFile(ctx, nfoPath, subtitlePath)
+	result, err := translator.Translate(ctx, nfoPath)
 
 	// Assert
 	assert.Error(t, err)
@@ -442,7 +441,7 @@ func TestTranslateFile_NoTranslatorSet(t *testing.T) {
 		ContextEnabled: true,
 	}
 
-	translator := &Translator{
+	translator := &FileTranslator{
 		nfoReader:      mockNFO,
 		subtitleReader: mockSubReader,
 		subtitleWriter: mockSubWriter,
@@ -462,7 +461,7 @@ func TestTranslateFile_NoTranslatorSet(t *testing.T) {
 	mockSubReader.On("Read", subtitlePath).Return(testSubtitleFile, nil)
 
 	// Act
-	result, err := translator.TranslateFile(ctx, nfoPath, subtitlePath)
+	result, err := translator.Translate(ctx, nfoPath)
 
 	// Assert
 	assert.Error(t, err)
@@ -519,19 +518,16 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 		TargetLanguage: language.Chinese,
 		BatchSize:      10, // Small batch for testing
 		ContextEnabled: true,
-		OutputPath:     outputPath,
+		OutputDir:      outputPath,
 		Verbose:        true,
 	}
 
-	trans, err := NewTranslator(translatorConfig)
+	trans, err := NewTranslator(translatorConfig, aiTranslator)
 	assert.NoError(t, err)
-
-	// Set the LLM-based translator
-	trans.SetTranslator(aiTranslator)
 
 	// Act
 	ctx := context.Background()
-	result, err := trans.TranslateFile(ctx, nfoPath, subtitlePath)
+	result, err := trans.Translate(ctx, nfoPath)
 
 	// Assert
 	if err != nil {
@@ -554,23 +550,4 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 			t.Logf("Line %d - Translated: %s", i+1, line.TranslatedText)
 		}
 	}
-}
-
-func TestSetTranslator(t *testing.T) {
-	// Arrange
-	config := TranslatorConfig{
-		TargetLanguage: language.Chinese,
-	}
-
-	translator, err := NewTranslator(config)
-	assert.NoError(t, err)
-	assert.Nil(t, translator.translator)
-
-	mockTrans := &mockTranslator{}
-
-	// Act
-	translator.SetTranslator(mockTrans)
-
-	// Assert
-	assert.Equal(t, mockTrans, translator.translator)
 }
