@@ -1,4 +1,4 @@
-package ctxtrans
+package service
 
 import (
 	"errors"
@@ -26,7 +26,7 @@ const (
 type CTXTransError struct {
 	Type    ErrorType
 	Message string
-	Context map[string]interface{}
+	Context map[string]any
 	Cause   error
 }
 
@@ -34,7 +34,7 @@ func NewError(errorType ErrorType, message string) *CTXTransError {
 	return &CTXTransError{
 		Type:    errorType,
 		Message: message,
-		Context: make(map[string]interface{}),
+		Context: make(map[string]any),
 	}
 }
 
@@ -42,7 +42,7 @@ func NewErrorWithCause(errorType ErrorType, message string, cause error) *CTXTra
 	return &CTXTransError{
 		Type:    errorType,
 		Message: message,
-		Context: make(map[string]interface{}),
+		Context: make(map[string]any),
 		Cause:   cause,
 	}
 }
@@ -173,7 +173,7 @@ func Must(err error, message string) {
 func SafeExecute(fn func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = NewError(ErrUnknown, fmt.Sprintf("运行时错误: %v", r))
+			err = NewError(ErrUnknown, fmt.Sprintf("runtime error: %v", r))
 		}
 	}()
 

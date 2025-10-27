@@ -368,7 +368,6 @@ const (
 // TestOpenRouterIntegration tests actual connection to OpenRouter API
 // This test is skipped by default and requires OPENROUTER_API_KEY environment variable
 func TestOpenRouterIntegration(t *testing.T) {
-
 	_ = godotenv.Load("./.env")
 	// This test will be skipped if OPENROUTER_API_KEY is not set
 	apiKey := os.Getenv("LLM_API_KEY")

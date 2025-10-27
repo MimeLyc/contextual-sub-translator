@@ -1,4 +1,4 @@
-package ctxtrans
+package service
 
 import (
 	"encoding/xml"
@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 )
 
 // XMLTVShow is the XML structure for NFO files
@@ -38,7 +40,7 @@ func NewNFOReader() NFOReader {
 }
 
 // ReadTVShowInfo reads TV show information from NFO file
-func (r *DefaultNFOReader) ReadTVShowInfo(path string) (*TVShowInfo, error) {
+func (r *DefaultNFOReader) ReadTVShowInfo(path string) (*media.TVShowInfo, error) {
 	if !strings.HasSuffix(strings.ToLower(path), ".nfo") {
 		return nil, fmt.Errorf("file extension must be .nfo: %s", path)
 	}
@@ -57,12 +59,17 @@ func (r *DefaultNFOReader) ReadTVShowInfo(path string) (*TVShowInfo, error) {
 		return nil, fmt.Errorf("failed to parse XML: %w", err)
 	}
 
-	return r.convertToTVShowInfo(xmlShow), nil
+	shows, err := r.convertToTVShowInfo(xmlShow), nil
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert XML to TVShowInfo: %w", err)
+	}
+	shows.Path = path
+	return shows, nil
 }
 
 // convertToTVShowInfo converts XML structure to internal structure
-func (r *DefaultNFOReader) convertToTVShowInfo(xmlShow XMLTVShow) *TVShowInfo {
-	show := &TVShowInfo{
+func (r *DefaultNFOReader) convertToTVShowInfo(xmlShow XMLTVShow) *media.TVShowInfo {
+	show := &media.TVShowInfo{
 		Title:         strings.TrimSpace(xmlShow.Title),
 		OriginalTitle: strings.TrimSpace(xmlShow.OriginalTitle),
 		Plot:          strings.TrimSpace(xmlShow.Plot),
@@ -84,7 +91,7 @@ func (r *DefaultNFOReader) convertToTVShowInfo(xmlShow XMLTVShow) *TVShowInfo {
 	// Process actors
 	for _, a := range xmlShow.Actors {
 		if name := strings.TrimSpace(a.Name); name != "" {
-			show.Actors = append(show.Actors, Actor{
+			show.Actors = append(show.Actors, media.Actor{
 				Name:  name,
 				Role:  strings.TrimSpace(a.Role),
 				Order: a.Order,
@@ -96,7 +103,7 @@ func (r *DefaultNFOReader) convertToTVShowInfo(xmlShow XMLTVShow) *TVShowInfo {
 }
 
 // ReadTVShowInfoSafe safely reads NFO file, ignoring some common errors
-func ReadTVShowInfoSafe(path string) (*TVShowInfo, error) {
+func ReadTVShowInfoSafe(path string) (*media.TVShowInfo, error) {
 	reader := NewNFOReader()
 
 	// Ensure path is absolute
@@ -121,7 +128,7 @@ func ReadTVShowInfoSafe(path string) (*TVShowInfo, error) {
 }
 
 // GetContextTextFromTVShow generates context text for LLM from TVShowInfo
-func GetContextTextFromTVShow(show *TVShowInfo) string {
+func GetContextTextFromTVShow(show *media.TVShowInfo) string {
 	if show == nil {
 		return ""
 	}

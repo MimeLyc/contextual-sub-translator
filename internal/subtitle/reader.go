@@ -1,4 +1,4 @@
-package ctxtrans
+package subtitle
 
 import (
 	"bufio"
@@ -8,36 +8,45 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/abadojack/whatlanggo"
+	"golang.org/x/text/language"
 )
 
-// DefaultSubtitleReader is the default subtitle file reader
-type DefaultSubtitleReader struct{}
+// DefaultReader is the default subtitle file reader
+type DefaultReader struct {
+	path string
+}
 
-// NewSubtitleReader creates a new subtitle file reader
-func NewSubtitleReader() SubtitleReader {
-	return &DefaultSubtitleReader{}
+// NewReader creates a new subtitle file reader
+func NewReader(
+	path string,
+) Reader {
+	return &DefaultReader{
+		path: path,
+	}
 }
 
 // ReadSubtitle reads subtitle file
-func (r *DefaultSubtitleReader) ReadSubtitle(path string) (*SubtitleFile, error) {
-	if !strings.HasSuffix(strings.ToLower(path), ".srt") {
-		return nil, fmt.Errorf("only SRT format subtitle files are supported: %s", path)
+func (r *DefaultReader) Read() (*File, error) {
+	if !strings.HasSuffix(strings.ToLower(r.path), ".srt") {
+		return nil, fmt.Errorf("only SRT format subtitle files are supported: %s", r.path)
 	}
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return nil, fmt.Errorf("subtitle file does not exist: %s", path)
+	if _, err := os.Stat(r.path); os.IsNotExist(err) {
+		return nil, fmt.Errorf("subtitle file does not exist: %s", r.path)
 	}
 
-	file, err := os.Open(path)
+	file, err := os.Open(r.path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open subtitle file: %w", err)
 	}
 	defer file.Close()
 
-	var lines []SubtitleLine
+	var lines []Line
 	scanner := bufio.NewScanner(file)
 
-	currentLine := SubtitleLine{}
+	currentLine := Line{}
 	state := "index" // possible values: "index", "time", "text", "empty"
 	var textLines []string
 
@@ -75,7 +84,7 @@ func (r *DefaultSubtitleReader) ReadSubtitle(path string) (*SubtitleFile, error)
 				if len(textLines) > 0 {
 					currentLine.Text = strings.Join(textLines, "\n")
 					lines = append(lines, currentLine)
-					currentLine = SubtitleLine{}
+					currentLine = Line{}
 				}
 				state = "index"
 				textLines = []string{}
@@ -98,10 +107,11 @@ func (r *DefaultSubtitleReader) ReadSubtitle(path string) (*SubtitleFile, error)
 	// detect language (simple detection based on text content)
 	language := detectLanguage(lines)
 
-	return &SubtitleFile{
+	return &File{
 		Lines:    lines,
 		Language: language,
 		Format:   "SRT",
+		Path:     r.path,
 	}, nil
 }
 
@@ -141,90 +151,39 @@ func parseSRTTime(timeString string) (time.Duration, time.Duration, error) {
 }
 
 // detectLanguage simple language detection based on common characters
-func detectLanguage(lines []SubtitleLine) string {
+func detectLanguage(lines []Line) language.Tag {
 	if len(lines) == 0 {
-		return "unknown"
+		return language.Und
 	}
 
-	var totalChars int
-	var cjkChars, latinChars int
+	langMap := make(map[string]int)
 
 	for _, line := range lines {
-		for _, r := range line.Text {
-			totalChars++
-			if r >= 0x4E00 && r <= 0x9FFF { // CJK Unified Ideographs
-				cjkChars++
-			} else if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				latinChars++
-			}
+		lineText := removeHTML(line.Text)
+		lang := whatlanggo.DetectLang(lineText).Iso6391()
+		if _, ok := langMap[lang]; !ok {
+			langMap[lang] = 0
+		}
+
+		langMap[lang]++
+	}
+
+	// Get top language
+	var topLang string
+	var topCount int
+	for lang, count := range langMap {
+		if count > topCount {
+			topLang = lang
+			topCount = count
 		}
 	}
 
-	if totalChars == 0 {
-		return "unknown"
-	}
-
-	cjkRatio := float64(cjkChars) / float64(totalChars)
-	latinRatio := float64(latinChars) / float64(totalChars)
-
-	if cjkRatio > 0.3 {
-		return "zh" // Chinese
-	} else if latinRatio > 0.5 {
-		return "en" // English
-	}
-
-	return "unknown"
+	return language.All.Make(topLang)
 }
 
-// DefaultSubtitleWriter is the default subtitle file writer
-type DefaultSubtitleWriter struct{}
-
-// NewSubtitleWriter creates a new subtitle file writer
-func NewSubtitleWriter() SubtitleWriter {
-	return &DefaultSubtitleWriter{}
-}
-
-// WriteSubtitle writes subtitle file to specified path
-func (w *DefaultSubtitleWriter) WriteSubtitle(path string, subtitle *SubtitleFile) error {
-	if subtitle == nil {
-		return fmt.Errorf("subtitle data is empty")
-	}
-
-	file, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	defer writer.Flush()
-
-	for _, line := range subtitle.Lines {
-		// write index
-		fmt.Fprintf(writer, "%d\n", line.Index)
-
-		// write time
-		startTime := formatDuration(line.StartTime)
-		endTime := formatDuration(line.EndTime)
-		fmt.Fprintf(writer, "%s --> %s\n", startTime, endTime)
-
-		// write text (use translated text, fallback to original if empty)
-		text := line.TranslatedText
-		if text == "" {
-			text = line.Text
-		}
-		fmt.Fprintf(writer, "%s\n\n", text)
-	}
-
-	return nil
-}
-
-// formatDuration formats time.Duration to SRT time format
-func formatDuration(d time.Duration) string {
-	hours := int(d.Hours())
-	minutes := int(d.Minutes()) % 60
-	seconds := int(d.Seconds()) % 60
-	milliseconds := int(d.Milliseconds()) % 1000
-
-	return fmt.Sprintf("%02d:%02d:%02d,%03d", hours, minutes, seconds, milliseconds)
+// removeHTML removes HTML tags from text
+func removeHTML(text string) string {
+	// Remove HTML tags using regex
+	re := regexp.MustCompile(`<[^>]*>`)
+	return re.ReplaceAllString(text, "")
 }

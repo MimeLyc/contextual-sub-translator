@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
+	"golang.org/x/text/language"
 )
 
 // Config holds all application configuration
@@ -43,6 +46,14 @@ type Config struct {
 
 	// System Configuration
 	System SystemConfig `json:"system"`
+
+	// Translate Configuration
+	Translate TranslateConfig `json:"translate"`
+}
+
+type TranslateConfig struct {
+	TargetLanguage language.Tag `json:"target_language"`
+	CronExpr       string       `json:"cron_expr"`
 }
 
 // LLMConfig holds the configuration for LLM client
@@ -67,6 +78,26 @@ type MediaConfig struct {
 	DocumentaryDir string `json:"documentary_dir"`
 }
 
+func (c MediaConfig) MediaPaths() []string {
+	ret := make([]string, 0)
+	if c.MovieDir != "" {
+		ret = append(ret, c.MovieDir)
+	}
+	if c.AnimationDir != "" {
+		ret = append(ret, c.AnimationDir)
+	}
+	if c.TeleplayDir != "" {
+		ret = append(ret, c.TeleplayDir)
+	}
+	if c.ShowDir != "" {
+		ret = append(ret, c.ShowDir)
+	}
+	if c.DocumentaryDir != "" {
+		ret = append(ret, c.DocumentaryDir)
+	}
+	return ret
+}
+
 // SystemConfig holds the system configuration
 type SystemConfig struct {
 	PUID int    `json:"puid"`
@@ -78,8 +109,8 @@ type SystemConfig struct {
 // Option is a function type for configuring Config
 type Option func(*Config)
 
-// New creates a new Config instance with values from environment variables and options
-func New(opts ...Option) (*Config, error) {
+// NewFromEnv creates a new Config instance with values from environment variables and options
+func NewFromEnv(opts ...Option) (*Config, error) {
 	config := &Config{
 		LLM: LLMConfig{
 			APIKey:      getEnvString("LLM_API_KEY", ""),
@@ -104,7 +135,14 @@ func New(opts ...Option) (*Config, error) {
 			TZ:   getEnvString("TZ", "UTC"),
 			Zone: getEnvString("ZONE", "local"),
 		},
+		Translate: TranslateConfig{
+			//TODO: get from env
+			TargetLanguage: language.Chinese,
+			CronExpr:       getEnvString("CRON_EXPR", "0 0 * * *"),
+		},
 	}
+
+	log.Info("Config: %v", config)
 
 	// Apply custom options
 	for _, opt := range opts {
