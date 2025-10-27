@@ -9,6 +9,7 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
+	"github.com/MimeLyc/contextual-sub-translator/pkg/file"
 	"golang.org/x/text/language"
 )
 
@@ -35,7 +36,7 @@ func (c TranslatorConfig) OutputPath() string {
 	if outputName == "" {
 		base := filepath.Base(c.InputPath)
 		ext := filepath.Ext(c.InputPath)
-		outputName = filepath.Join(base, ".ctxtrans."+c.TargetLanguage.String()+ext)
+		outputName = file.ReplaceExt(base, ".ctxtrans."+c.TargetLanguage.String()+ext)
 	}
 	return filepath.Join(outputDir, outputName)
 }
@@ -86,7 +87,7 @@ func (t *SubTranslator) Translate(
 
 	// Save translation results if output path is specified
 	if outputPath != "" {
-		if err := t.subtitleWriter.Write(t.config.OutputDir, translatedFile); err != nil {
+		if err := t.subtitleWriter.Write(outputPath, translatedFile); err != nil {
 			return nil, fmt.Errorf("failed to save translation results: %w", err)
 		}
 	}
@@ -125,6 +126,7 @@ func (t *SubTranslator) translateSubtitleLines(
 		ctx,
 		media,
 		lines,
+		t.file.Language.String(),
 		t.config.TargetLanguage.String(),
 		t.config.BatchSize)
 }
@@ -209,6 +211,7 @@ func NewTranslator(
 			subtitleWriter: subtitle.NewWriter(),
 			config:         config,
 			translator:     cli,
+			file:           config.SubtitleFile,
 		}, nil
 	}
 	return &FileTranslator{

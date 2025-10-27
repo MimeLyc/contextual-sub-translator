@@ -17,8 +17,8 @@ type TriggerInfo struct {
 }
 
 func GetTriggerInfo(cronExpr string, refTime time.Time) (*TriggerInfo, error) {
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour |
-		cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	parser := cron.NewParser(cron.Minute | cron.Hour |
+		cron.Dom | cron.Month | cron.Dow)
 	schedule, err := parser.Parse(cronExpr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cron expression: %w", err)

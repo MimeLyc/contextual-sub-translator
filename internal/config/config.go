@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
 	"golang.org/x/text/language"
 )
 
@@ -108,8 +109,8 @@ type SystemConfig struct {
 // Option is a function type for configuring Config
 type Option func(*Config)
 
-// New creates a new Config instance with values from environment variables and options
-func New(opts ...Option) (*Config, error) {
+// NewFromEnv creates a new Config instance with values from environment variables and options
+func NewFromEnv(opts ...Option) (*Config, error) {
 	config := &Config{
 		LLM: LLMConfig{
 			APIKey:      getEnvString("LLM_API_KEY", ""),
@@ -135,10 +136,13 @@ func New(opts ...Option) (*Config, error) {
 			Zone: getEnvString("ZONE", "local"),
 		},
 		Translate: TranslateConfig{
+			//TODO: get from env
 			TargetLanguage: language.Chinese,
 			CronExpr:       getEnvString("CRON_EXPR", "0 0 * * *"),
 		},
 	}
+
+	log.Info("Config: %v", config)
 
 	// Apply custom options
 	for _, opt := range opts {

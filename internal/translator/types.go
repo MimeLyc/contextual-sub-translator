@@ -22,6 +22,7 @@ type Translator interface {
 		ctx context.Context,
 		media MediaMeta,
 		subtitleTexts []string,
+		sourceLang string,
 		targetLang string,
 	) ([]string, error)
 
@@ -29,6 +30,7 @@ type Translator interface {
 		ctx context.Context,
 		media MediaMeta,
 		subtitleLines []subtitle.Line,
+		sourceLanguage string,
 		targetLanguage string,
 		batchSize int) ([]subtitle.Line, error)
 }

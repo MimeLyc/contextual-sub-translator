@@ -51,13 +51,16 @@ type mockTranslator struct {
 	mock.Mock
 }
 
-func (m *mockTranslator) Translate(ctx context.Context, media translator.MediaMeta, subtitleTexts []string, targetLang string) ([]string, error) {
+func (m *mockTranslator) Translate(
+	ctx context.Context,
+	media translator.MediaMeta,
+	subtitleTexts []string, sourceLang, targetLang string) ([]string, error) {
 	args := m.Called(ctx, media, subtitleTexts, targetLang)
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (m *mockTranslator) BatchTranslate(ctx context.Context, media translator.MediaMeta, subtitleLines []subtitle.Line, targetLanguage string, batchSize int) ([]subtitle.Line, error) {
-	args := m.Called(ctx, media, subtitleLines, targetLanguage, batchSize)
+func (m *mockTranslator) BatchTranslate(ctx context.Context, media translator.MediaMeta, subtitleLines []subtitle.Line, sourceLanguage string, targetLanguage string, batchSize int) ([]subtitle.Line, error) {
+	args := m.Called(ctx, media, subtitleLines, sourceLanguage, targetLanguage, batchSize)
 	return args.Get(0).([]subtitle.Line), args.Error(1)
 }
 
@@ -483,8 +486,8 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 	}
 
 	// Use testdata files
-	nfoPath := filepath.Join("testdata", "data", "tvshow.nfo")
-	subtitlePath := filepath.Join("testdata", "data", "DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt")
+	nfoPath := filepath.Join("../../test/animations/tvshow.nfo")
+	subtitlePath := filepath.Join("../../test/animations/DAN DA DAN - S02E09 - I Want to Rebuild the House WEBDL-1080p.ctxtrans.srt")
 	outputPath := filepath.Join(t.TempDir(), "translated_output.srt")
 
 	// Verify testdata files exist
@@ -501,10 +504,10 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 	config := &llm.Config{
 		APIKey:      os.Getenv("LLM_API_KEY"),
 		APIURL:      "https://openrouter.ai/api/v1",
-		Model:       "moonshotai/kimi-k2",
-		MaxTokens:   1000,
+		Model:       "deepseek/deepseek-chat-v3.1",
+		MaxTokens:   3000,
 		Temperature: 0.7,
-		Timeout:     30,
+		Timeout:     120,
 	}
 
 	llmClient, err := llm.NewClient(config)
@@ -520,6 +523,7 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 		ContextEnabled: true,
 		OutputDir:      outputPath,
 		Verbose:        true,
+		InputPath:      subtitlePath,
 	}
 
 	trans, err := NewTranslator(translatorConfig, aiTranslator)
@@ -550,4 +554,18 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 			t.Logf("Line %d - Translated: %s", i+1, line.TranslatedText)
 		}
 	}
+}
+
+func TestOutputPath(t *testing.T) {
+	config := TranslatorConfig{
+		TargetLanguage: language.Chinese,
+		BatchSize:      10, // Small batch for testing
+		ContextEnabled: true,
+		OutputDir:      "testdata/output",
+		Verbose:        true,
+		InputPath:      "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt",
+	}
+
+	op := config.OutputPath()
+	assert.Equal(t, "testdata/output/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.ctxtrans.srt", op)
 }

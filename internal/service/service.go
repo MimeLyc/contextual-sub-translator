@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/text/language"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/config"
@@ -40,19 +41,24 @@ func NewRunnableTransService(
 	}
 }
 
+var singleflightGroup singleflight.Group
+
 func (s transService) Schedule(
 	ctx context.Context,
 ) error {
 	log.Info("Run TransService")
 
 	runFunc := func() {
-		for _, dir := range s.cfg.Media.MediaPaths() {
-			log.Info("Run in dir %s", dir)
-			err := s.run(ctx, dir)
-			if err != nil {
-				log.Error("Failed to run in dir %s: %v", dir, err)
+		_, _, _ = singleflightGroup.Do("run", func() (any, error) {
+			for _, dir := range s.cfg.Media.MediaPaths() {
+				log.Info("Run in dir %s", dir)
+				err := s.run(ctx, dir)
+				if err != nil {
+					log.Error("Failed to run in dir %s: %v", dir, err)
+				}
 			}
-		}
+			return nil, nil
+		})
 	}
 	_, err := s.cron.AddFunc(s.cronExpr, runFunc)
 	return err
@@ -67,6 +73,7 @@ func (s transService) run(
 		log.Error("Failed to find target media tuples in dir %s: %v", dir, err)
 		return err
 	}
+	log.Info("Found %d target media tuples in dir %s", len(toTrans), dir)
 
 	llmClient, err := llm.NewClient(&llm.Config{
 		APIKey:      s.cfg.LLM.APIKey,
@@ -74,6 +81,9 @@ func (s transService) run(
 		Model:       s.cfg.LLM.Model,
 		MaxTokens:   s.cfg.LLM.MaxTokens,
 		Temperature: s.cfg.LLM.Temperature,
+		Timeout:     s.cfg.LLM.Timeout,
+		SiteURL:     s.cfg.LLM.SiteURL,
+		AppName:     s.cfg.LLM.AppName,
 	})
 	if err != nil {
 		log.Error("Failed to create LLM client: %v", err)
@@ -84,11 +94,15 @@ func (s transService) run(
 
 	for _, bundle := range toTrans {
 		targetSub := bundle.SubtitleFiles[0]
+
+		log.Info("Translating subtitle media %s from %s to %s", bundle.MediaFile, targetSub.Language, s.cfg.Translate.TargetLanguage)
 		transLator, err := NewTranslator(
 			TranslatorConfig{
 				TargetLanguage: s.cfg.Translate.TargetLanguage,
 				ContextEnabled: true,
 				SubtitleFile:   &targetSub,
+				OutputDir:      filepath.Dir(bundle.MediaFile),
+				InputPath:      targetSub.Path,
 			},
 			aitranslator,
 		)
@@ -223,6 +237,7 @@ func (s transService) findSourceBundlesInDir(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get start time: %w", err)
 	}
+	log.Info("Start searching target metdia files after time: %v", startTime)
 
 	// Step 1: Find target files (subtitles or media files)
 	var targetFiles []string
@@ -368,6 +383,10 @@ func (s transService) startTime() (time.Time, error) {
 		cronSchedule, err := icron.GetTriggerInfo(s.cronExpr, time.Now())
 		if err != nil {
 			return time.Time{}, fmt.Errorf("failed to get cron schedule: %w", err)
+		}
+
+		if time.Now().Add(-24 * 1 * time.Hour).Before(cronSchedule.Last) {
+			return time.Now().Add(-24 * 7 * time.Hour), nil
 		}
 		return cronSchedule.Last, nil
 	}

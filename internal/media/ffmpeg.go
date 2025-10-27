@@ -1,8 +1,8 @@
 package media
 
 import (
+	"bufio"
 	"encoding/json"
-	"fmt"
 	"os/exec"
 	"path/filepath"
 
@@ -23,6 +23,8 @@ type ffmpeg struct {
 func NewFfmpeg(
 	mediaPath string,
 ) ffmpeg {
+	mediaPath, _ = filepath.Abs(mediaPath)
+
 	// deal with media path
 	mediaPath = filepath.Clean(mediaPath)
 	mediaDir := filepath.Dir(mediaPath)
@@ -44,20 +46,52 @@ func (ff ffmpeg) ExtractSubtitle(
 ) (string, error) {
 	output := filepath.Join(toDir, name)
 
-	cmdPath, err := exec.LookPath(ff.ffprobeCmd)
+	cmdPath, err := exec.LookPath(ff.ffmpegCmd)
 	if err != nil {
 		return "", err
 	}
 	cmd := exec.Command(cmdPath, ff.extractSubArgs(output)...)
 
-	return output, cmd.Run()
+	// Redirect stderr to stdout
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Error("Failed to redirect stderr to stdout: %v", err)
+	}
+	cmd.Stderr = cmd.Stdout
+
+	err = cmd.Start()
+	if err != nil {
+		log.Error("Execution failed: %v", err)
+	}
+	done := make(chan struct{})
+
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		buf := make([]byte, 0, 10*1024*1024)
+		scanner.Buffer(buf, 100*1024*1024)
+		for scanner.Scan() {
+			log.Info(scanner.Text())
+		}
+		if err := scanner.Err(); err != nil && err.Error() != "read |0: file already closed" {
+			log.Error("Execution failed: %v", err)
+		}
+		close(done)
+	}()
+
+	err = cmd.Wait()
+	<-done
+	if err != nil {
+		log.Error("Execution failed: %v", err)
+	}
+	return output, err
 }
 
 // Extract subtitle from media file and save to target path
 func (ff ffmpeg) DefExtractSubtitle() (string, error) {
 	return ff.ExtractSubtitle(
 		ff.fileDir,
-		fmt.Sprintf("ctxtrans_%s", file.ReplaceExt(ff.fileName, ".srt")))
+		// TODO
+		file.ReplaceExt(ff.fileName, "ctxtrans.srt"))
 
 }
 

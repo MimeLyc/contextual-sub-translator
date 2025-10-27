@@ -12,6 +12,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1
+	golang.org/x/sync v0.16.0
 	golang.org/x/text v0.28.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

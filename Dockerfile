@@ -20,32 +20,43 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main cmd/main.go
 
 # Final stage
-FROM alpine:latest
+FROM debian:bullseye-slim
 
-# Install ca-certificates for HTTPS
-RUN apk --no-cache add ca-certificates
-
-# Create a non-root user
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
+# Install ca-certificates for HTTPS and ffmpeg/ffprobe
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root/
 
 # Copy the binary from builder stage
 COPY --from=builder /app/main .
 
-# Change ownership to non-root user
-RUN chown appuser:appgroup main
+# Set environment variables with defaults
+ENV LLM_API_URL=https://openrouter.ai/api/v1
+ENV LLM_MODEL=openai/gpt-3.5-turbo
+ENV LLM_MAX_TOKENS=1000
+ENV LLM_TEMPERATURE=0.7
+ENV LLM_TIMEOUT=30
+ENV LLM_SITE_URL=""
+ENV LLM_APP_NAME=""
 
-# Switch to non-root user
-USER appuser
+ENV MOVIE_DIR=/movies
+ENV ANIMATION_DIR=/animations
+ENV TELEPLAY_DIR=/teleplays
+ENV SHOW_DIR=/shows
+ENV DOCUMENTARY_DIR=/documentaries
 
-# Expose port
-EXPOSE 8080
+ENV PUID=1000
+ENV PGID=1000
+ENV TZ=UTC
+ENV ZONE=local
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+ENV CRON_EXPR="0 0 * * *"
+
+# Create volume mount points
+VOLUME ["/movies", "/animations", "/teleplays", "/shows", "/documentaries"]
 
 # Run the application
 CMD ["./main"]

@@ -627,7 +627,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 }
 
 func TestRealFindTargetMediaTuplesInDir(t *testing.T) {
-	dir := "..."
+	dir := "../../test/animations/"
 
 	service := transService{
 		cfg: config.Config{

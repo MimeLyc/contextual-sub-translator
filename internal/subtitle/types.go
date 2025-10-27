@@ -31,6 +31,7 @@ type File struct {
 	Lines    []Line
 	Language language.Tag
 	Format   string // e.g. SRT, ASS, VTT etc
+	Path     string
 }
 
 type Description struct {

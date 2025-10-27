@@ -111,6 +111,7 @@ func (r *DefaultReader) Read() (*File, error) {
 		Lines:    lines,
 		Language: language,
 		Format:   "SRT",
+		Path:     r.path,
 	}, nil
 }
 
@@ -158,7 +159,8 @@ func detectLanguage(lines []Line) language.Tag {
 	langMap := make(map[string]int)
 
 	for _, line := range lines {
-		lang := whatlanggo.DetectLang(line.Text).Iso6391()
+		lineText := removeHTML(line.Text)
+		lang := whatlanggo.DetectLang(lineText).Iso6391()
 		if _, ok := langMap[lang]; !ok {
 			langMap[lang] = 0
 		}
@@ -177,4 +179,11 @@ func detectLanguage(lines []Line) language.Tag {
 	}
 
 	return language.All.Make(topLang)
+}
+
+// removeHTML removes HTML tags from text
+func removeHTML(text string) string {
+	// Remove HTML tags using regex
+	re := regexp.MustCompile(`<[^>]*>`)
+	return re.ReplaceAllString(text, "")
 }
