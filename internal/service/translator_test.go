@@ -487,7 +487,7 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 
 	// Use testdata files
 	nfoPath := filepath.Join("../../test/animations/tvshow.nfo")
-	subtitlePath := filepath.Join("../../test/animations/DAN DA DAN - S02E09 - I Want to Rebuild the House WEBDL-1080p.ctxtrans.srt")
+	subtitlePath := filepath.Join("../../test/animations/Gachiakuta - S01E15 - Clash! WEBRip-1080p.ctxtrans.srt")
 	outputPath := filepath.Join(t.TempDir(), "translated_output.srt")
 
 	// Verify testdata files exist
@@ -504,9 +504,9 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 	config := &llm.Config{
 		APIKey:      os.Getenv("LLM_API_KEY"),
 		APIURL:      "https://openrouter.ai/api/v1",
-		Model:       "deepseek/deepseek-chat-v3.1",
+		Model:       "google/gemini-3-pro-preview",
 		MaxTokens:   3000,
-		Temperature: 0.7,
+		Temperature: 0.5,
 		Timeout:     120,
 	}
 

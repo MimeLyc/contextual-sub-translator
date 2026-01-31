@@ -112,11 +112,11 @@ func (s transService) run(
 		}
 
 		// TODO: check if nfo file exists
-		if res, err := transLator.Translate(ctx, bundle.NFOFiles[0].Path); err != nil {
+		if _, err := transLator.Translate(ctx, bundle.NFOFiles[0].Path); err != nil {
 			log.Error("Failed to translate subtitle media %s: %v", bundle.MediaFile, err)
 			return err
 		} else {
-			log.Info("Translated subtitle media %s: %v", bundle.MediaFile, res)
+			log.Info("Translated subtitle media %s", bundle.MediaFile)
 		}
 	}
 	return nil
@@ -385,8 +385,8 @@ func (s transService) startTime() (time.Time, error) {
 			return time.Time{}, fmt.Errorf("failed to get cron schedule: %w", err)
 		}
 
-		if time.Now().Add(-24 * 1 * time.Hour).Before(cronSchedule.Last) {
-			return time.Now().Add(-24 * 7 * time.Hour), nil
+		if time.Now().Add(-24 * 14 * time.Hour).Before(cronSchedule.Last) {
+			return time.Now().Add(-24 * 14 * time.Hour), nil
 		}
 		return cronSchedule.Last, nil
 	}
