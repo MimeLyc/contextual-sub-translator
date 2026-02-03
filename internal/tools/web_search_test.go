@@ -359,8 +359,8 @@ func TestWebSearchTool_Integration(t *testing.T) {
 	tool := NewWebSearchTool(apiKey, "")
 
 	tests := []struct {
-		name           string
-		args           WebSearchArgs
+		name             string
+		args             WebSearchArgs
 		expectedInResult []string
 	}{
 		{

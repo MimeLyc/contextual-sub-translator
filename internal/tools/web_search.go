@@ -27,13 +27,13 @@ type WebSearchArgs struct {
 
 // TavilyRequest represents a request to Tavily API
 type TavilyRequest struct {
-	APIKey           string   `json:"api_key"`
-	Query            string   `json:"query"`
-	SearchDepth      string   `json:"search_depth,omitempty"`
-	IncludeAnswer    bool     `json:"include_answer,omitempty"`
-	IncludeRawContent bool    `json:"include_raw_content,omitempty"`
-	MaxResults       int      `json:"max_results,omitempty"`
-	IncludeDomains   []string `json:"include_domains,omitempty"`
+	APIKey            string   `json:"api_key"`
+	Query             string   `json:"query"`
+	SearchDepth       string   `json:"search_depth,omitempty"`
+	IncludeAnswer     bool     `json:"include_answer,omitempty"`
+	IncludeRawContent bool     `json:"include_raw_content,omitempty"`
+	MaxResults        int      `json:"max_results,omitempty"`
+	IncludeDomains    []string `json:"include_domains,omitempty"`
 }
 
 // TavilyResponse represents a response from Tavily API

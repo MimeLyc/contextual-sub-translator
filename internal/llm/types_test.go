@@ -13,7 +13,7 @@ func TestNewFileFromPath(t *testing.T) {
 	// Test with existing file
 	filePath := "testdata/test.txt"
 	file, err := NewFileFromPath(filePath)
-	
+
 	require.NoError(t, err)
 	assert.Equal(t, "test.txt", file.Name)
 	assert.Equal(t, "text/plain", file.ContentType)
@@ -30,7 +30,7 @@ func TestNewFileFromPath(t *testing.T) {
 func TestNewFileFromURL(t *testing.T) {
 	url := "https://example.com/document.pdf"
 	file, err := NewFileFromURL(url)
-	
+
 	require.NoError(t, err)
 	assert.Equal(t, "document.pdf", file.Name)
 	assert.Equal(t, url, file.URL)
@@ -44,7 +44,7 @@ func TestFileToMessage(t *testing.T) {
 		ContentType: "text/plain",
 		Content:     []byte("This is test content"),
 	}
-	
+
 	msg, err := textFile.ToMessage()
 	require.NoError(t, err)
 	assert.Contains(t, msg, "File: test.txt")
@@ -56,7 +56,7 @@ func TestFileToMessage(t *testing.T) {
 		ContentType: "image/png",
 		Content:     []byte{0x89, 0x50, 0x4E, 0x47}, // PNG header
 	}
-	
+
 	msg, err = binaryFile.ToMessage()
 	require.NoError(t, err)
 	assert.Contains(t, msg, "File: image.png")
@@ -69,7 +69,7 @@ func TestFileToMessage(t *testing.T) {
 		Name: "document.pdf",
 		URL:  "https://example.com/document.pdf",
 	}
-	
+
 	msg, err = urlFile.ToMessage()
 	require.NoError(t, err)
 	assert.Contains(t, msg, "File URL: https://example.com/document.pdf")
@@ -139,7 +139,7 @@ func TestIsTextFile(t *testing.T) {
 
 func TestChatCompletionOptions(t *testing.T) {
 	opts := NewChatCompletionOptions()
-	
+
 	assert.Equal(t, "", opts.SystemPrompt)
 	assert.Equal(t, 0, opts.MaxTokens)
 	assert.Equal(t, 0.7, opts.Temperature)
@@ -149,7 +149,7 @@ func TestChatCompletionOptions(t *testing.T) {
 	// Test option chaining
 	file1 := File{Name: "test1.txt"}
 	file2 := File{Name: "test2.txt"}
-	
+
 	opts = opts.
 		WithSystemPrompt("You are a helpful assistant").
 		WithMaxTokens(1000).
@@ -172,7 +172,7 @@ func TestMessageMarshaling(t *testing.T) {
 
 	jsonData, err := msg.MarshalJSON()
 	require.NoError(t, err)
-	
+
 	expected := `{"role":"user","content":"Hello, world!"}`
 	assert.JSONEq(t, expected, string(jsonData))
 }
@@ -212,7 +212,7 @@ func TestLargeFileHandling(t *testing.T) {
 	for i := range largeContent {
 		largeContent[i] = 'A' + byte(i%26)
 	}
-	
+
 	_, err = tempFile.Write(largeContent)
 	require.NoError(t, err)
 	tempFile.Close()
@@ -223,4 +223,3 @@ func TestLargeFileHandling(t *testing.T) {
 	assert.Equal(t, len(largeContent), len(file.Content))
 	assert.Equal(t, "text/plain", file.ContentType)
 }
-
