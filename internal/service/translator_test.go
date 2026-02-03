@@ -13,9 +13,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/text/language"
 
+	"github.com/MimeLyc/contextual-sub-translator/internal/agent"
 	"github.com/MimeLyc/contextual-sub-translator/internal/llm"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
+	"github.com/MimeLyc/contextual-sub-translator/internal/tools"
 	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
 )
 
@@ -487,7 +489,7 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 
 	// Use testdata files
 	nfoPath := filepath.Join("../../test/animations/tvshow.nfo")
-	subtitlePath := filepath.Join("../../test/animations/DAN DA DAN - S02E09 - I Want to Rebuild the House WEBDL-1080p.ctxtrans.srt")
+	subtitlePath := filepath.Join("../../test/animations/Gachiakuta - S01E15 - Clash! WEBRip-1080p.ctxtrans.srt")
 	outputPath := filepath.Join(t.TempDir(), "translated_output.srt")
 
 	// Verify testdata files exist
@@ -504,17 +506,21 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 	config := &llm.Config{
 		APIKey:      os.Getenv("LLM_API_KEY"),
 		APIURL:      "https://openrouter.ai/api/v1",
-		Model:       "deepseek/deepseek-chat-v3.1",
-		MaxTokens:   3000,
-		Temperature: 0.7,
+		Model:       "moonshotai/kimi-k2.5",
+		MaxTokens:   8000,
+		Temperature: 0.5,
 		Timeout:     120,
 	}
 
 	llmClient, err := llm.NewClient(config)
 	assert.NoError(t, err)
 
-	// Create AI translator using LLM client
-	aiTranslator := translator.NewAiTranslator(*llmClient)
+	// Create tool registry (no web search for tests)
+	registry := tools.NewRegistry()
+
+	// Create agent-based translator
+	llmAgent := agent.NewLLMAgent(llmClient, registry, 10)
+	agentTranslator := translator.NewAgentTranslator(llmAgent, false)
 
 	// Create and configure translator
 	translatorConfig := TranslatorConfig{
@@ -526,7 +532,7 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 		InputPath:      subtitlePath,
 	}
 
-	trans, err := NewTranslator(translatorConfig, aiTranslator)
+	trans, err := NewTranslator(translatorConfig, agentTranslator)
 	assert.NoError(t, err)
 
 	// Act

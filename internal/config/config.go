@@ -49,11 +49,28 @@ type Config struct {
 
 	// Translate Configuration
 	Translate TranslateConfig `json:"translate"`
+
+	// Search Configuration (for web search tool)
+	Search SearchConfig `json:"search"`
+
+	// Agent Configuration
+	Agent AgentConfig `json:"agent"`
 }
 
 type TranslateConfig struct {
 	TargetLanguage language.Tag `json:"target_language"`
 	CronExpr       string       `json:"cron_expr"`
+}
+
+// SearchConfig holds the configuration for web search tool
+type SearchConfig struct {
+	APIKey string `json:"api_key"` // Tavily API key
+	APIURL string `json:"api_url"` // Tavily API URL
+}
+
+// AgentConfig holds the configuration for the agent
+type AgentConfig struct {
+	MaxIterations int `json:"max_iterations"` // Max tool calling iterations
 }
 
 // LLMConfig holds the configuration for LLM client
@@ -139,6 +156,13 @@ func NewFromEnv(opts ...Option) (*Config, error) {
 			//TODO: get from env
 			TargetLanguage: language.Chinese,
 			CronExpr:       getEnvString("CRON_EXPR", "0 0 * * *"),
+		},
+		Search: SearchConfig{
+			APIKey: getEnvString("SEARCH_API_KEY", ""),
+			APIURL: getEnvString("SEARCH_API_URL", "https://api.tavily.com/search"),
+		},
+		Agent: AgentConfig{
+			MaxIterations: getEnvInt("AGENT_MAX_ITERATIONS", 10),
 		},
 	}
 

@@ -12,10 +12,12 @@ import (
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/text/language"
 
+	"github.com/MimeLyc/contextual-sub-translator/internal/agent"
 	"github.com/MimeLyc/contextual-sub-translator/internal/config"
 	"github.com/MimeLyc/contextual-sub-translator/internal/llm"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
+	"github.com/MimeLyc/contextual-sub-translator/internal/tools"
 	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/file"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/icron"
@@ -90,7 +92,24 @@ func (s transService) run(
 		return err
 	}
 
-	aitranslator := translator.NewAiTranslator(*llmClient)
+	// Create tool registry and register tools
+	registry := tools.NewRegistry()
+	searchEnabled := false
+
+	// Register web_search tool if API key is configured
+	if s.cfg.Search.APIKey != "" {
+		webSearchTool := tools.NewWebSearchTool(s.cfg.Search.APIKey, s.cfg.Search.APIURL)
+		if err := registry.Register(webSearchTool); err != nil {
+			log.Error("Failed to register web_search tool: %v", err)
+		} else {
+			searchEnabled = true
+			log.Info("Web search tool enabled")
+		}
+	}
+
+	// Create agent-based translator
+	llmAgent := agent.NewLLMAgent(llmClient, registry, s.cfg.Agent.MaxIterations)
+	agentTranslator := translator.NewAgentTranslator(llmAgent, searchEnabled)
 
 	for _, bundle := range toTrans {
 		targetSub := bundle.SubtitleFiles[0]
@@ -104,7 +123,7 @@ func (s transService) run(
 				OutputDir:      filepath.Dir(bundle.MediaFile),
 				InputPath:      targetSub.Path,
 			},
-			aitranslator,
+			agentTranslator,
 		)
 		if err != nil {
 			log.Error("Failed to create translator: %v", err)
@@ -112,11 +131,11 @@ func (s transService) run(
 		}
 
 		// TODO: check if nfo file exists
-		if res, err := transLator.Translate(ctx, bundle.NFOFiles[0].Path); err != nil {
+		if _, err := transLator.Translate(ctx, bundle.NFOFiles[0].Path); err != nil {
 			log.Error("Failed to translate subtitle media %s: %v", bundle.MediaFile, err)
 			return err
 		} else {
-			log.Info("Translated subtitle media %s: %v", bundle.MediaFile, res)
+			log.Info("Translated subtitle media %s", bundle.MediaFile)
 		}
 	}
 	return nil
@@ -385,8 +404,8 @@ func (s transService) startTime() (time.Time, error) {
 			return time.Time{}, fmt.Errorf("failed to get cron schedule: %w", err)
 		}
 
-		if time.Now().Add(-24 * 1 * time.Hour).Before(cronSchedule.Last) {
-			return time.Now().Add(-24 * 7 * time.Hour), nil
+		if time.Now().Add(-24 * 14 * time.Hour).Before(cronSchedule.Last) {
+			return time.Now().Add(-24 * 14 * time.Hour), nil
 		}
 		return cronSchedule.Last, nil
 	}

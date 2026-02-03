@@ -36,7 +36,11 @@ func (c TranslatorConfig) OutputPath() string {
 	if outputName == "" {
 		base := filepath.Base(c.InputPath)
 		ext := filepath.Ext(c.InputPath)
-		outputName = file.ReplaceExt(base, ".ctxtrans."+c.TargetLanguage.String()+ext)
+		if strings.Contains(base, ".ctxtrans.") {
+			outputName = file.ReplaceExt(base, c.TargetLanguage.String()+ext)
+		} else {
+			outputName = file.ReplaceExt(base, ".ctxtrans."+c.TargetLanguage.String()+ext)
+		}
 	}
 	return filepath.Join(outputDir, outputName)
 }
@@ -156,6 +160,9 @@ func (t *FileTranslator) Translate(
 		t.config,
 		t.translator,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create translator: %w", err)
+	}
 	return subTrans.Translate(ctx, tvshowNFOPath)
 }
 
