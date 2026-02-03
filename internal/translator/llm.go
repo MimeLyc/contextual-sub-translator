@@ -5,20 +5,27 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MimeLyc/contextual-sub-translator/internal/llm"
+	"github.com/MimeLyc/contextual-sub-translator/internal/agent"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
 )
 
-type aiTranslator struct {
-	cli llm.Client
+// agentTranslator is the unified AI layer for all translation
+// It uses an agent with tool calling support for enhanced translation quality
+type agentTranslator struct {
+	agent         *agent.LLMAgent
+	searchEnabled bool
 }
 
-func NewAiTranslator(cli llm.Client) Translator {
-	return aiTranslator{cli: cli}
+// NewAgentTranslator creates a new agent-based translator
+func NewAgentTranslator(agentInstance *agent.LLMAgent, searchEnabled bool) Translator {
+	return &agentTranslator{
+		agent:         agentInstance,
+		searchEnabled: searchEnabled,
+	}
 }
 
-func (c aiTranslator) Translate(
+func (t *agentTranslator) Translate(
 	ctx context.Context,
 	media MediaMeta,
 	subtitleTexts []string,
@@ -26,23 +33,33 @@ func (c aiTranslator) Translate(
 	targetLang string,
 ) ([]string, error) {
 	// Build context prompt
-	contextPrompt := c.buildContextPrompt(media, sourceLang, targetLang)
+	systemPrompt := t.buildContextPrompt(media, sourceLang, targetLang)
+	userMessage := strings.Join(subtitleTexts, subtitleLineBreaker)
 
-	return c.call(
-		ctx,
-		[]llm.Message{
-			{
-				Role:    "system",
-				Content: contextPrompt,
-			},
-			{
-				Role:    "user",
-				Content: strings.Join(subtitleTexts, subtitleLineBreaker),
-			},
-		})
+	// Execute via agent
+	result, err := t.agent.Execute(ctx, agent.AgentRequest{
+		SystemPrompt: systemPrompt,
+		UserMessage:  userMessage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("agent execution failed: %w", err)
+	}
+
+	// Log tool usage
+	if len(result.ToolCalls) > 0 {
+		log.Info("Agent used %d tool calls in %d iterations", len(result.ToolCalls), result.Iterations)
+		for _, tc := range result.ToolCalls {
+			log.Info("  - Tool: %s, Error: %v", tc.ToolName, tc.IsError)
+		}
+	}
+
+	// Parse response
+	content := result.Content
+	content = strings.ReplaceAll(content, inlineBreakerPlaceholder, "\n")
+	return strings.Split(content, subtitleLineBreaker), nil
 }
 
-func (c aiTranslator) BatchTranslate(
+func (t *agentTranslator) BatchTranslate(
 	ctx context.Context,
 	media MediaMeta,
 	subtitleLines []subtitle.Line,
@@ -53,7 +70,7 @@ func (c aiTranslator) BatchTranslate(
 		batchSize = 50
 	}
 
-	allTranslations, err := c.batchTranslate(ctx, media, subtitleLines, sourceLanguage, targetLanguage, batchSize, 0, len(subtitleLines))
+	allTranslations, err := t.batchTranslate(ctx, media, subtitleLines, sourceLanguage, targetLanguage, batchSize, 0, len(subtitleLines))
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +88,7 @@ func (c aiTranslator) BatchTranslate(
 	return subtitleLines, nil
 }
 
-func (c aiTranslator) batchTranslate(
+func (t *agentTranslator) batchTranslate(
 	ctx context.Context,
 	media MediaMeta,
 	subtitleLines []subtitle.Line,
@@ -99,14 +116,14 @@ func (c aiTranslator) batchTranslate(
 			subtitleTexts = append(subtitleTexts, formattedText)
 		}
 
-		translations, err := c.Translate(ctx, media, subtitleTexts, sourceLanguage, targetLanguage)
+		translations, err := t.Translate(ctx, media, subtitleTexts, sourceLanguage, targetLanguage)
 		if err != nil {
 			return nil, fmt.Errorf("batch translation failed for lines %d-%d: %w", i+1, end, err)
 		}
 
 		if len(translations) != len(subtitleTexts) {
 			log.Error("batch translation failed for lines %d-%d: translation count mismatch, retry range with size %d", i+1, end, batchSize/2)
-			if translations, err = c.batchTranslate(ctx, media, subtitleLines, sourceLanguage, targetLanguage, batchSize/2, i, end); err != nil {
+			if translations, err = t.batchTranslate(ctx, media, subtitleLines, sourceLanguage, targetLanguage, batchSize/2, i, end); err != nil {
 				return nil, fmt.Errorf("retry batch translation failed for lines %d-%d: %w", i+1, end, err)
 			}
 		}
@@ -116,9 +133,9 @@ func (c aiTranslator) batchTranslate(
 	return allTranslations, nil
 }
 
-// Build context prompt
-// This is where magic happens to enhance the translation quality.
-func (l aiTranslator) buildContextPrompt(
+// buildContextPrompt builds the system prompt for translation
+// Enhanced to instruct the agent to use web_search tool when available
+func (t *agentTranslator) buildContextPrompt(
 	media MediaMeta,
 	sourceLanguage string,
 	targetLanguage string,
@@ -147,40 +164,33 @@ func (l aiTranslator) buildContextPrompt(
 		prompt.WriteString(fmt.Sprintf("Plot Summary: %s\n", media.Plot))
 	}
 
-	prompt.WriteString("\n=== AUTONOMOUS DISCOVERY SYSTEM ===\n")
-	prompt.WriteString("Dynamically discover and search appropriate databases for both languages:\n")
-	prompt.WriteString("\nDiscovery Protocol:\n")
-	prompt.WriteString("- Source Language: Search autonomous databases for " + sourceLanguage + " terms\n")
-	prompt.WriteString("- Target Language: Identify official localization through discovered sources\n")
-	prompt.WriteString("- Cross-reference mapping: Build precise name mappings from discovered databases\n")
-	prompt.WriteString("- Validation: Verify through multiple authoritative sources\n")
+	// Add tool usage instructions if search is enabled
+	if t.searchEnabled {
+		prompt.WriteString("\n=== WEB SEARCH TOOL ===\n")
+		prompt.WriteString("You have access to a web_search tool. BEFORE translating, use it to:\n")
+		prompt.WriteString("1. Search for official " + targetLanguage + " character names for this show\n")
+		prompt.WriteString("2. Find official localized place names and terminology\n")
+		prompt.WriteString("3. Verify translations against authoritative sources\n")
+		prompt.WriteString("\nExample searches:\n")
+		if media.Title != "" {
+			prompt.WriteString(fmt.Sprintf("- \"%s %s official character names\"\n", media.Title, targetLanguage))
+			prompt.WriteString(fmt.Sprintf("- \"%s %s localization wiki\"\n", media.Title, targetLanguage))
+		}
+		prompt.WriteString("\nUse the discovered official names consistently throughout your translation.\n")
+	}
 
-	prompt.WriteString("\n=== CROSS-LANGUAGE VERIFICATION PROCESS ===\n")
-	prompt.WriteString("1. Primary Search: Find official " + targetLanguage + " versions on specified platforms\n")
-	prompt.WriteString("2. Cross-Validation: Verify names/terms across multiple " + targetLanguage + " sources\n")
-	prompt.WriteString("3. Back-Verification: Check if mapped names still make sense in original context\n")
-	prompt.WriteString("4. Consistency Check: Ensure all instances use the standardized mapping\n")
-
-	prompt.WriteString("\n=== TRANSLATION EXECUTION ===\n")
-	prompt.WriteString("When translating:\n")
+	prompt.WriteString("\n=== TRANSLATION GUIDELINES ===\n")
 	prompt.WriteString("1. Apply discovered name mappings consistently across all content\n")
 	prompt.WriteString("2. Maintain character voice and relationship dynamics\n")
 	prompt.WriteString("3. Ensure " + targetLanguage + " flows naturally while preserving meaning\n")
 	prompt.WriteString("4. Keep subtitle length appropriate for screen reading\n")
-	prompt.WriteString("5. Preserve original line structure and %%special%% formatting\n")
+	prompt.WriteString("5. Preserve original line structure and " + subtitleLineBreaker + " line separators\n")
+	prompt.WriteString("6. Preserve " + inlineBreakerPlaceholder + " inline break markers\n")
+
+	prompt.WriteString("\n=== OUTPUT FORMAT ===\n")
+	prompt.WriteString("Return ONLY the translated subtitles, one per line, separated by " + subtitleLineBreaker + "\n")
+	prompt.WriteString("Do not include any explanations, notes, or additional text.\n")
+	prompt.WriteString("The number of output lines must exactly match the number of input lines.\n")
 
 	return prompt.String()
-}
-
-func (l aiTranslator) call(
-	ctx context.Context,
-	messages []llm.Message,
-) ([]string, error) {
-	resp, err := l.cli.ChatCompletion(ctx, messages, nil)
-	if err != nil {
-		return nil, err
-	}
-	content := resp.Choices[0].Message.Content
-	content = strings.ReplaceAll(content, inlineBreakerPlaceholder, "\n")
-	return strings.Split(content, subtitleLineBreaker), nil
 }

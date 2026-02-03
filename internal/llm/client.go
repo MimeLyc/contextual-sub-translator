@@ -314,6 +314,63 @@ func (c *Client) StreamChatCompletion(ctx context.Context, messages []Message, o
 	return nil, fmt.Errorf("streaming not implemented yet")
 }
 
+// ChatCompletionWithTools creates a chat completion request with tool calling support
+//
+// ctx: Context for the request
+// messages: Array of messages in the conversation
+// tools: Available tools for the model to call
+// opts: Optional configuration for the request
+//
+// Returns the chat completion response or an error
+// When the model wants to call a tool, FinishReason will be "tool_calls"
+// and the response will contain ToolCalls in the message
+func (c *Client) ChatCompletionWithTools(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	opts *ChatCompletionOptions,
+) (*ChatResponse, error) {
+	if opts == nil {
+		opts = NewChatCompletionOptions()
+	}
+
+	// Add system prompt if provided
+	if opts.SystemPrompt != "" {
+		systemMessage := Message{
+			Role:    "system",
+			Content: opts.SystemPrompt,
+		}
+		messages = append([]Message{systemMessage}, messages...)
+	}
+
+	// Add file content to messages if provided
+	if len(opts.Files) > 0 {
+		fileMessages := c.processFiles(opts.Files)
+		messages = append(messages, fileMessages...)
+	}
+
+	request := ChatRequest{
+		Model:       c.getModel(opts),
+		Messages:    messages,
+		MaxTokens:   c.getMaxTokens(opts),
+		Temperature: c.getTemperature(opts),
+		Stream:      opts.Stream,
+		Tools:       tools,
+	}
+
+	// Set tool_choice to "auto" if tools are provided
+	if len(tools) > 0 {
+		request.ToolChoice = "auto"
+	}
+
+	response, err := c.makeRequest(ctx, "POST", "/chat/completions", request)
+	if err != nil {
+		return nil, fmt.Errorf("chat completion with tools failed: %w", err)
+	}
+
+	return response, nil
+}
+
 // ModelInfo represents basic model information
 //
 // ID: Model identifier

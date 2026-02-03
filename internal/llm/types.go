@@ -12,15 +12,46 @@ import (
 // Message represents a chat message
 // Supports both text and file content
 //
-// Role: "system", "user", or "assistant"
+// Role: "system", "user", "assistant", or "tool"
 // Content: Text content of the message
 // FilePaths: Optional list of file paths to include as attachments
 // FileURLs: Optional list of URLs to include as attachments
+// ToolCalls: Tool calls made by the assistant (for role="assistant")
+// ToolCallID: ID of the tool call this message is responding to (for role="tool")
 type Message struct {
-	Role      string   `json:"role"`
-	Content   string   `json:"content"`
-	FilePaths []string `json:"-"` // Not serialized to JSON, handled separately
-	FileURLs  []string `json:"-"` // Not serialized to JSON, handled separately
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	FilePaths  []string   `json:"-"`                      // Not serialized to JSON, handled separately
+	FileURLs   []string   `json:"-"`                      // Not serialized to JSON, handled separately
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // Tool calls from assistant
+	ToolCallID string     `json:"tool_call_id,omitempty"` // For tool response messages
+}
+
+// ToolDefinition defines a tool available for the model to call
+// Compatible with OpenAI function calling format
+type ToolDefinition struct {
+	Type     string   `json:"type"` // "function"
+	Function Function `json:"function"`
+}
+
+// Function describes a callable function
+type Function struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"` // JSON Schema
+}
+
+// ToolCall represents a tool call made by the model
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"` // "function"
+	Function FunctionCall `json:"function"`
+}
+
+// FunctionCall represents the function to call and its arguments
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // JSON string
 }
 
 // ChatRequest represents a chat completion request
@@ -31,12 +62,16 @@ type Message struct {
 // MaxTokens: Maximum number of tokens to generate
 // Temperature: Sampling temperature (0-2)
 // Stream: Whether to stream the response
+// Tools: Available tools for the model to call
+// ToolChoice: Controls tool selection behavior
 type ChatRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	Temperature float64   `json:"temperature,omitempty"`
-	Stream      bool      `json:"stream,omitempty"`
+	Model       string           `json:"model"`
+	Messages    []Message        `json:"messages"`
+	MaxTokens   int              `json:"max_tokens,omitempty"`
+	Temperature float64          `json:"temperature,omitempty"`
+	Stream      bool             `json:"stream,omitempty"`
+	Tools       []ToolDefinition `json:"tools,omitempty"`
+	ToolChoice  any              `json:"tool_choice,omitempty"` // "auto", "none", or specific tool
 }
 
 // ChatResponse represents a chat completion response
@@ -274,15 +309,19 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("LLM API Error: %s (type: %s, code: %s)", e.Message, e.Type, e.Code)
 }
 
-// MarshalJSON custom JSON marshaling for Message to handle file uploads
+// MarshalJSON custom JSON marshaling for Message to handle file uploads and tool calls
 func (m Message) MarshalJSON() ([]byte, error) {
-	// This is a simplified version - in real implementation, files would be handled differently
-	// For OpenRouter, files would typically be handled as URLs or base64 encoded content
-	return json.Marshal(&struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+	// Build the message structure based on role
+	msg := struct {
+		Role       string     `json:"role"`
+		Content    string     `json:"content,omitempty"`
+		ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+		ToolCallID string     `json:"tool_call_id,omitempty"`
 	}{
-		Role:    m.Role,
-		Content: m.Content,
-	})
+		Role:       m.Role,
+		Content:    m.Content,
+		ToolCalls:  m.ToolCalls,
+		ToolCallID: m.ToolCallID,
+	}
+	return json.Marshal(msg)
 }

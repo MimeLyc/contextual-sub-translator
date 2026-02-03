@@ -1,10 +1,18 @@
 # ctxtrans Makefile
 
 BINARY_NAME=ctxtrans
-VERSION=1.0.0
+VERSION?=1.0.0
 BUILD_TIME=$(shell date +%Y-%m-%d_%H:%M:%S)
 GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 LDFLAGS=-ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -X main.GitCommit=${GIT_COMMIT}"
+IMAGE_REGISTRY?=
+IMAGE_NAME?=$(BINARY_NAME)
+IMAGE_TAG?=$(VERSION)
+IMAGE_FULL_NAME:=$(if $(IMAGE_REGISTRY),$(IMAGE_REGISTRY)/,)$(IMAGE_NAME)
+PLATFORMS?=linux/amd64,linux/arm64
+DOCKERFILE?=Dockerfile
+DOCKER_BUILD_ARGS?=
+BUILDX_BUILDER?=ctxtrans-builder
 
 # 默认目标
 .PHONY: all
@@ -53,6 +61,23 @@ lint:
 	@echo "Running linter..."
 	@golangci-lint run
 
+# 构建 Docker 镜像
+.PHONY: docker-build
+docker-build:
+	@echo "Building Docker image ${IMAGE_FULL_NAME}:${IMAGE_TAG}..."
+	DOCKER_BUILDKIT=1 docker build -t ${IMAGE_FULL_NAME}:${IMAGE_TAG} -t ${IMAGE_FULL_NAME}:latest -f ${DOCKERFILE} ${DOCKER_BUILD_ARGS} .
+
+# 构建并推送多架构镜像
+.PHONY: ensure-buildx-builder
+ensure-buildx-builder:
+	@docker buildx inspect ${BUILDX_BUILDER} >/dev/null 2>&1 || docker buildx create --name ${BUILDX_BUILDER} --driver docker-container --use
+	@docker buildx use ${BUILDX_BUILDER}
+
+.PHONY: docker-build-multi
+docker-build-multi: ensure-buildx-builder
+	@echo "Building multi-arch image ${IMAGE_FULL_NAME}:${IMAGE_TAG} for platforms ${PLATFORMS}..."
+	DOCKER_BUILDKIT=1 docker buildx build --builder ${BUILDX_BUILDER} --platform ${PLATFORMS} -t ${IMAGE_FULL_NAME}:${IMAGE_TAG} -t ${IMAGE_FULL_NAME}:latest -f ${DOCKERFILE} ${DOCKER_BUILD_ARGS} --push .
+
 # 检查模块依赖
 .PHONY: deps
 deps:
@@ -78,6 +103,8 @@ help:
 	@echo "  lint         - Run linter"
 	@echo "  clean        - Clean build artifacts"
 	@echo "  deps         - Check dependencies"
+	@echo "  docker-build - Build Docker image (local arch)"
+	@echo "  ensure-buildx-builder - Create/select buildx builder (docker-container driver)"
+	@echo "  docker-build-multi - Build and push multi-arch image with buildx"
 	@echo "  example      - Run example"
 	@echo "  help         - Show this help"
-
