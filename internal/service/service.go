@@ -7,16 +7,18 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/text/language"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/agent"
 	"github.com/MimeLyc/contextual-sub-translator/internal/config"
-	"github.com/MimeLyc/contextual-sub-translator/internal/llm"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
+	"github.com/MimeLyc/contextual-sub-translator/internal/termmap"
 	"github.com/MimeLyc/contextual-sub-translator/internal/tools"
 	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/file"
@@ -44,6 +46,7 @@ func NewRunnableTransService(
 }
 
 var singleflightGroup singleflight.Group
+var termMapFileLocks sync.Map
 
 func (s transService) Schedule(
 	ctx context.Context,
@@ -77,7 +80,7 @@ func (s transService) run(
 	}
 	log.Info("Found %d target media tuples in dir %s", len(toTrans), dir)
 
-	llmClient, err := llm.NewClient(&llm.Config{
+	llmConfig := agent.LLMConfig{
 		APIKey:      s.cfg.LLM.APIKey,
 		APIURL:      s.cfg.LLM.APIURL,
 		Model:       s.cfg.LLM.Model,
@@ -86,17 +89,11 @@ func (s transService) run(
 		Timeout:     s.cfg.LLM.Timeout,
 		SiteURL:     s.cfg.LLM.SiteURL,
 		AppName:     s.cfg.LLM.AppName,
-	})
-	if err != nil {
-		log.Error("Failed to create LLM client: %v", err)
-		return err
 	}
 
-	// Create tool registry and register tools
 	registry := tools.NewRegistry()
 	searchEnabled := false
 
-	// Register web_search tool if API key is configured
 	if s.cfg.Search.APIKey != "" {
 		webSearchTool := tools.NewWebSearchTool(s.cfg.Search.APIKey, s.cfg.Search.APIURL)
 		if err := registry.Register(webSearchTool); err != nil {
@@ -107,37 +104,130 @@ func (s transService) run(
 		}
 	}
 
-	// Create agent-based translator
-	llmAgent := agent.NewLLMAgent(llmClient, registry, s.cfg.Agent.MaxIterations)
-	agentTranslator := translator.NewAgentTranslator(llmAgent, searchEnabled)
+	llmAgent, err := agent.NewLLMAgent(llmConfig, registry, s.cfg.Agent.MaxIterations)
+	if err != nil {
+		log.Error("Failed to create agent-core-go agent: %v", err)
+		return err
+	}
+
+	bundleConcurrency := max(1, s.cfg.Agent.BundleConcurrency)
+	if bundleConcurrency == 1 {
+		for _, bundle := range toTrans {
+			if err := s.processBundle(ctx, bundle, llmAgent, searchEnabled); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	log.Info("Processing bundles with concurrency=%d", bundleConcurrency)
+	group, groupCtx := errgroup.WithContext(ctx)
+	sem := make(chan struct{}, bundleConcurrency)
 
 	for _, bundle := range toTrans {
-		targetSub := bundle.SubtitleFiles[0]
+		bundle := bundle
+		group.Go(func() error {
+			select {
+			case sem <- struct{}{}:
+			case <-groupCtx.Done():
+				return groupCtx.Err()
+			}
+			defer func() { <-sem }()
+			return s.processBundle(groupCtx, bundle, llmAgent, searchEnabled)
+		})
+	}
 
-		log.Info("Translating subtitle media %s from %s to %s", bundle.MediaFile, targetSub.Language, s.cfg.Translate.TargetLanguage)
-		transLator, err := NewTranslator(
-			TranslatorConfig{
-				TargetLanguage: s.cfg.Translate.TargetLanguage,
-				ContextEnabled: true,
-				SubtitleFile:   &targetSub,
-				OutputDir:      filepath.Dir(bundle.MediaFile),
-				InputPath:      targetSub.Path,
-			},
-			agentTranslator,
-		)
+	return group.Wait()
+}
+
+func (s transService) processBundle(
+	ctx context.Context,
+	bundle MediaBundle,
+	llmAgent *agent.LLMAgent,
+	searchEnabled bool,
+) error {
+	targetSub := bundle.SubtitleFiles[0]
+	agentTranslator := translator.NewAgentTranslator(llmAgent, searchEnabled)
+
+	var termMapData map[string]string
+	srcLang := targetSub.Language.String()
+	tgtLang := s.cfg.Translate.TargetLanguage.String()
+	mediaDir := filepath.Dir(bundle.MediaFile)
+
+	tmPath := termmap.FindInAncestors(mediaDir, srcLang, tgtLang)
+	if tmPath != "" {
+		tm, err := termmap.Load(tmPath)
 		if err != nil {
-			log.Error("Failed to create translator: %v", err)
-			return err
-		}
-
-		// TODO: check if nfo file exists
-		if _, err := transLator.Translate(ctx, bundle.NFOFiles[0].Path); err != nil {
-			log.Error("Failed to translate subtitle media %s: %v", bundle.MediaFile, err)
-			return err
+			log.Error("Failed to load term map from %s: %v", tmPath, err)
 		} else {
-			log.Info("Translated subtitle media %s", bundle.MediaFile)
+			termMapData = map[string]string(tm)
+			log.Info("Loaded term map from %s (%d terms)", tmPath, len(tm))
+		}
+	} else if searchEnabled && len(bundle.NFOFiles) > 0 {
+		gen := termmap.NewGenerator(llmAgent)
+		tm, err := gen.Generate(ctx, bundle.NFOFiles[0], srcLang, tgtLang)
+		if err != nil {
+			log.Error("Failed to generate term map: %v", err)
+		} else {
+			saveDir := findTermMapSaveDir(bundle.NFOFiles, mediaDir)
+			savePath := termmap.FilePath(saveDir, srcLang, tgtLang)
+			merged, err := saveMergedTermMap(savePath, termMapData, tm)
+			if err != nil {
+				log.Error("Failed to save term map to %s: %v", savePath, err)
+			} else {
+				termMapData = merged
+				log.Info("Generated and saved term map to %s (%d terms)", savePath, len(tm))
+			}
 		}
 	}
+
+	log.Info("Translating subtitle media %s from %s to %s", bundle.MediaFile, targetSub.Language, s.cfg.Translate.TargetLanguage)
+	transLator, err := NewTranslator(
+		TranslatorConfig{
+			TargetLanguage: s.cfg.Translate.TargetLanguage,
+			ContextEnabled: true,
+			SubtitleFile:   &targetSub,
+			OutputDir:      filepath.Dir(bundle.MediaFile),
+			InputPath:      targetSub.Path,
+			TermMap:        termMapData,
+		},
+		agentTranslator,
+	)
+	if err != nil {
+		log.Error("Failed to create translator: %v", err)
+		return err
+	}
+
+	if _, err := transLator.Translate(ctx, bundle.NFOFiles[0].Path); err != nil {
+		log.Error("Failed to translate subtitle media %s: %v", bundle.MediaFile, err)
+		return err
+	}
+	log.Info("Translated subtitle media %s", bundle.MediaFile)
+
+	if discoverer, ok := agentTranslator.(translator.TermDiscoverer); ok {
+		toolCalls := discoverer.CollectedToolCalls()
+		discoverer.ResetCollectedToolCalls()
+
+		if len(toolCalls) > 0 && searchEnabled && len(bundle.NFOFiles) > 0 {
+			gen := termmap.NewGenerator(llmAgent)
+			newTerms, err := gen.ExtractNewTerms(ctx, toolCalls, termmap.TermMap(termMapData), bundle.NFOFiles[0].Title, srcLang, tgtLang)
+			if err != nil {
+				log.Error("Failed to extract new terms from tool calls: %v", err)
+			} else if len(newTerms) > 0 {
+				saveDir := findTermMapSaveDir(bundle.NFOFiles, mediaDir)
+				savePath := termmap.FilePath(saveDir, srcLang, tgtLang)
+
+				merged, err := saveMergedTermMap(savePath, termMapData, newTerms)
+				if err != nil {
+					log.Error("Failed to save updated term map to %s: %v", savePath, err)
+				} else {
+					termMapData = merged
+					log.Info("Updated term map with %d new terms at %s", len(newTerms), savePath)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -395,6 +485,49 @@ func isSubtitleFile(ext string) bool {
 // isMediaFile checks if the file extension is a media format that supports embedded subtitles
 func isMediaFile(ext string) bool {
 	return slices.Contains(mediaExts, ext)
+}
+
+// findTermMapSaveDir finds the best directory to save a term map.
+// Prefers the directory containing tvshow.nfo for show-level coverage,
+// falling back to the first NFO's directory or the given fallback.
+func findTermMapSaveDir(nfoFiles []media.TVShowInfo, fallbackDir string) string {
+	for _, nfo := range nfoFiles {
+		if filepath.Base(nfo.Path) == "tvshow.nfo" {
+			return filepath.Dir(nfo.Path)
+		}
+	}
+	if len(nfoFiles) > 0 && nfoFiles[0].Path != "" {
+		return filepath.Dir(nfoFiles[0].Path)
+	}
+	return fallbackDir
+}
+
+func saveMergedTermMap(savePath string, existing map[string]string, newTerms termmap.TermMap) (map[string]string, error) {
+	merged := make(map[string]string, len(existing)+len(newTerms))
+	for key, value := range existing {
+		merged[key] = value
+	}
+	for key, value := range newTerms {
+		merged[key] = value
+	}
+
+	if err := withTermMapFileLock(savePath, func() error {
+		return termmap.Save(savePath, termmap.TermMap(merged))
+	}); err != nil {
+		return nil, err
+	}
+
+	return merged, nil
+}
+
+func withTermMapFileLock(path string, fn func() error) error {
+	muAny, _ := termMapFileLocks.LoadOrStore(path, &sync.Mutex{})
+	mu := muAny.(*sync.Mutex)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	return fn()
 }
 
 func (s transService) startTime() (time.Time, error) {

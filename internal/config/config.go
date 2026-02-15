@@ -18,7 +18,7 @@ import (
 // - LLM_API_KEY: API key for the LLM provider (required)
 // - LLM_API_URL: API endpoint URL (default: https://openrouter.ai/api/v1)
 // - LLM_MODEL: Model name to use (default: openai/gpt-3.5-turbo)
-// - LLM_MAX_TOKENS: Maximum tokens for responses (default: 1000)
+// - LLM_MAX_TOKENS: Maximum tokens for responses (default: 8000)
 // - LLM_TEMPERATURE: Temperature for responses (default: 0.7)
 // - LLM_TIMEOUT: Request timeout in seconds (default: 30)
 // - LLM_SITE_URL: Site URL for HTTP referer header (optional)
@@ -70,7 +70,8 @@ type SearchConfig struct {
 
 // AgentConfig holds the configuration for the agent
 type AgentConfig struct {
-	MaxIterations int `json:"max_iterations"` // Max tool calling iterations
+	MaxIterations     int `json:"max_iterations"`     // Max tool calling iterations
+	BundleConcurrency int `json:"bundle_concurrency"` // Parallel bundle processing workers
 }
 
 // LLMConfig holds the configuration for LLM client
@@ -133,7 +134,7 @@ func NewFromEnv(opts ...Option) (*Config, error) {
 			APIKey:      getEnvString("LLM_API_KEY", ""),
 			APIURL:      getEnvString("LLM_API_URL", "https://openrouter.ai/api/v1"),
 			Model:       getEnvString("LLM_MODEL", "openai/gpt-3.5-turbo"),
-			MaxTokens:   getEnvInt("LLM_MAX_TOKENS", 1000),
+			MaxTokens:   getEnvInt("LLM_MAX_TOKENS", 8000),
 			Temperature: getEnvFloat("LLM_TEMPERATURE", 0.7),
 			Timeout:     getEnvInt("LLM_TIMEOUT", 30),
 			SiteURL:     getEnvString("LLM_SITE_URL", ""),
@@ -162,7 +163,8 @@ func NewFromEnv(opts ...Option) (*Config, error) {
 			APIURL: getEnvString("SEARCH_API_URL", "https://api.tavily.com/search"),
 		},
 		Agent: AgentConfig{
-			MaxIterations: getEnvInt("AGENT_MAX_ITERATIONS", 10),
+			MaxIterations:     getEnvInt("AGENT_MAX_ITERATIONS", 10),
+			BundleConcurrency: getEnvInt("AGENT_BUNDLE_CONCURRENCY", 1),
 		},
 	}
 

@@ -3,6 +3,7 @@ package translator
 import (
 	"context"
 
+	"github.com/MimeLyc/contextual-sub-translator/internal/agent"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 )
@@ -15,8 +16,10 @@ const (
 type MediaMeta struct {
 	media.TVShowInfo
 	media.Actor
+	TermMap map[string]string
 }
 
+// Translator defines the interface for translating subtitles.
 type Translator interface {
 	Translate(
 		ctx context.Context,
@@ -33,4 +36,11 @@ type Translator interface {
 		sourceLanguage string,
 		targetLanguage string,
 		batchSize int) ([]subtitle.Line, error)
+}
+
+// TermDiscoverer defines the interface for accumulating tool calls during translation.
+// Implementations can collect web_search results for post-translation term extraction.
+type TermDiscoverer interface {
+	CollectedToolCalls() []agent.ToolCallRecord
+	ResetCollectedToolCalls()
 }
