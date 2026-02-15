@@ -14,11 +14,11 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/agent"
-	"github.com/MimeLyc/contextual-sub-translator/internal/llm"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/MimeLyc/contextual-sub-translator/internal/tools"
 	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
+	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
 )
 
 // Mock implementations
@@ -483,8 +483,8 @@ func TestTranslateFile_NoTranslatorSet(t *testing.T) {
 func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 	_ = godotenv.Load("./.env")
 	// Skip this test if no API key is available
-	if os.Getenv("LLM_API_KEY") == "" {
-		t.Skip("Skipping integration test: LLM_API_KEY not set")
+	if os.Getenv("LLM_API_KEY") == "" || os.Getenv("LLM_API_URL") == "" {
+		t.Skip("Skipping integration test: LLM_API_KEY or LLM_API_URL not set")
 	}
 
 	// Use testdata files
@@ -502,24 +502,31 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 		t.Skip("Testdata files not available")
 	}
 
-	// Create LLM config and client
-	config := &llm.Config{
+	// Create LLM config
+	llmConfig := agent.LLMConfig{
 		APIKey:      os.Getenv("LLM_API_KEY"),
-		APIURL:      "https://openrouter.ai/api/v1",
-		Model:       "moonshotai/kimi-k2.5",
+		APIURL:      os.Getenv("LLM_API_URL"),
+		Model:       "kimi-k2.5",
 		MaxTokens:   8000,
-		Temperature: 0.5,
+		Temperature: 1,
 		Timeout:     120,
 	}
 
-	llmClient, err := llm.NewClient(config)
-	assert.NoError(t, err)
-
 	// Create tool registry (no web search for tests)
 	registry := tools.NewRegistry()
+	// Register web_search tool if API key is configured
+	if os.Getenv("SEARCH_API_KEY") != "" {
+		webSearchTool := tools.NewWebSearchTool(os.Getenv("SEARCH_API_KEY"), "https://api.tavily.com/search")
+		if err := registry.Register(webSearchTool); err != nil {
+			log.Error("Failed to register web_search tool: %v", err)
+		} else {
+			log.Info("Web search tool enabled")
+		}
+	}
 
 	// Create agent-based translator
-	llmAgent := agent.NewLLMAgent(llmClient, registry, 10)
+	llmAgent, err := agent.NewLLMAgent(llmConfig, registry, 10)
+	assert.NoError(t, err)
 	agentTranslator := translator.NewAgentTranslator(llmAgent, false)
 
 	// Create and configure translator

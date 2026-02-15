@@ -1,3 +1,5 @@
+github.com/MimeLyc/agent-core-go v0.0.0-20260215131438-6acc9d11d10d h1:pRAg0B6tuJchLYNAaNtdyYv1Sizpbtx9ZnMh57Y38sw=
+github.com/MimeLyc/agent-core-go v0.0.0-20260215131438-6acc9d11d10d/go.mod h1:wTm36dPQlnTLE6mvfX2qTe7M1SNb6AIgGA3mT9F9AUo=
 github.com/abadojack/whatlanggo v1.0.1 h1:19N6YogDnf71CTHm3Mp2qhYfkRdyvbgwWdd2EPxJRG4=
 github.com/abadojack/whatlanggo v1.0.1/go.mod h1:66WiQbSbJBIlOZMsvbKe5m6pzQovxCH9B/K8tQB2uoc=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

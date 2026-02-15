@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -36,7 +36,7 @@ COPY --from=builder /app/main .
 # Set environment variables with defaults
 ENV LLM_API_URL=https://openrouter.ai/api/v1
 ENV LLM_MODEL=openai/gpt-3.5-turbo
-ENV LLM_MAX_TOKENS=1000
+ENV LLM_MAX_TOKENS=8000
 ENV LLM_TEMPERATURE=0.7
 ENV LLM_TIMEOUT=30
 ENV LLM_SITE_URL=""

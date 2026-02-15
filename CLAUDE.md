@@ -37,7 +37,7 @@ This is a contextual subtitle translator that uses LLM APIs to translate subtitl
 1. **NFO Reading** (`internal/ctxtrans/nfo_reader.go`) - Reads TV show metadata from .nfo files
 2. **Subtitle Processing** (`internal/subtitle/`) - Reads/writes subtitle files in various formats
 3. **Context-Aware Translation** (`internal/translator/`) - Translates with media context
-4. **LLM Integration** (`internal/llm/`) - Generic LLM client supporting multiple providers
+4. **Agent Integration** (`internal/agent/`) - Project adapter over `agent-core-go` API agent
 
 ### Key Architectural Patterns
 
@@ -46,7 +46,7 @@ This is a contextual subtitle translator that uses LLM APIs to translate subtitl
 - SubtitleReader/Writer for file I/O
 - LLM Translator for actual translation
 
-**Provider Abstraction:** The LLM client (`internal/llm/client.go`) is provider-agnostic, supporting OpenRouter, OpenAI, Anthropic, etc. through environment configuration.
+**Provider Abstraction:** `internal/agent/agent.go` builds an `agent-core-go` API agent (`ProviderTypeOpenAI`) and keeps OpenAI-compatible endpoints (OpenRouter/OpenAI/etc.) behind config.
 
 **Batch Processing:** Translation works in configurable batches for efficiency, processing multiple subtitle lines together with shared context.
 

@@ -25,6 +25,7 @@ type TranslatorConfig struct {
 	OutputName string
 	// BackupOriginal bool
 	Verbose bool
+	TermMap map[string]string
 }
 
 func (c TranslatorConfig) OutputPath() string {
@@ -77,6 +78,7 @@ func (t *SubTranslator) Translate(
 	translations, err := t.translateSubtitleLines(
 		ctx, translator.MediaMeta{
 			TVShowInfo: contextInfo,
+			TermMap:    t.config.TermMap,
 		}, t.file.Lines)
 	if err != nil {
 		return nil, fmt.Errorf("failed to translate subtitles: %w", err)

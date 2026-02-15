@@ -39,7 +39,7 @@ docker-compose up
 | `SEARCH_API_KEY` | Tavily API key for web search | (empty - disables search) |
 | `SEARCH_API_URL` | Search API endpoint | `https://api.tavily.com/search` |
 | `AGENT_MAX_ITERATIONS` | Max tool calling iterations | `10` |
-| `LLM_MAX_TOKENS` | Max tokens per request | `5000` |
+| `LLM_MAX_TOKENS` | Max tokens per request | `8000` |
 | `LLM_TEMPERATURE` | Sampling temperature | `0.7` |
 | `LLM_TIMEOUT` | Request timeout (seconds) | `120` |
 
@@ -61,41 +61,32 @@ The translator uses an agent-based architecture:
 
 ```
 internal/
-├── agent/           # Agent orchestration with tool calling
-│   ├── agent.go     # LLMAgent implementation
-│   ├── orchestrator.go  # Agent loop logic
+├── agent/           # Local adapter around agent-core-go
+│   ├── agent.go     # LLMAgent wrapper + tool adapters
 │   └── types.go     # AgentRequest, AgentResult types
 ├── tools/           # Tool implementations
 │   ├── tool.go      # Tool interface
 │   ├── registry.go  # Tool registry
 │   └── web_search.go    # Web search tool (Tavily API)
-├── llm/             # LLM client with tool calling support
-│   ├── client.go    # HTTP client with ChatCompletionWithTools
-│   └── types.go     # ToolCall, ToolDefinition types
 ├── translator/      # Translation logic using agent
 │   └── llm.go       # agentTranslator implementation
+├── termmap/         # Term map generation/extraction
 └── config/          # Configuration management
     └── config.go    # SearchConfig, AgentConfig
 ```
 
 ### How It Works
 
-1. **Agent Layer** (`internal/agent/`) - Orchestrates LLM interactions with tool calling loop
+1. **Agent Layer** (`internal/agent/`) - Wraps `agent-core-go` and adapts project tool interfaces
 2. **Tools Layer** (`internal/tools/`) - Implements tools like `web_search` for terminology lookup
-3. **LLM Layer** (`internal/llm/`) - Low-level LLM API communication with OpenAI-compatible tool calling
+3. **agent-core-go** (`github.com/MimeLyc/agent-core-go`) - Provides orchestration loop and OpenAI-compatible provider implementation
 4. **Translator Layer** (`internal/translator/`) - Translation logic using the agent
 
 ### Agent Loop
 
-The agent follows this flow:
+The runtime loop is provided by `agent-core-go`.
 
-1. Send messages + tools to LLM
-2. If `FinishReason == "tool_calls"`:
-   - Execute each tool via registry
-   - Append tool results as `role: "tool"` messages
-   - Loop back to step 1
-3. If `FinishReason == "stop"`: return final content
-4. Guard against infinite loops with MaxIterations
+`internal/agent/agent.go` only maps project requests/results and adapts `internal/tools` into `agent-core-go` tool interfaces, while `MaxIterations` remains configurable via `AGENT_MAX_ITERATIONS`.
 
 ## Development
 
