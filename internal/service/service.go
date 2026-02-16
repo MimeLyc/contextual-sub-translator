@@ -65,6 +65,9 @@ func (s transService) Schedule(
 			return nil, nil
 		})
 	}
+	// Run once immediately on startup
+	go runFunc()
+
 	_, err := s.cron.AddFunc(s.cronExpr, runFunc)
 	return err
 }
