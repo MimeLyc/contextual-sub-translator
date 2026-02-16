@@ -21,8 +21,6 @@ import (
 // - LLM_MAX_TOKENS: Maximum tokens for responses (default: 8000)
 // - LLM_TEMPERATURE: Temperature for responses (default: 0.7)
 // - LLM_TIMEOUT: Request timeout in seconds (default: 30)
-// - LLM_SITE_URL: Site URL for HTTP referer header (optional)
-// - LLM_APP_NAME: Application name for X-Title header (optional)
 //
 // Media Directory Configuration:
 // - MOVIE_DIR: Movie directory (default: /movies)
@@ -36,6 +34,18 @@ import (
 // - PGID: Group ID (default: 1000)
 // - TZ: Timezone (default: UTC)
 // - ZONE: Zone information (default: local)
+// - LOG_LEVEL: Log verbosity level (default: INFO)
+//
+// Translate Configuration:
+// - CRON_EXPR: Cron expression (default: 0 0 * * *)
+//
+// Search Configuration:
+// - SEARCH_API_KEY: Tavily API key (optional)
+// - SEARCH_API_URL: Tavily API URL (default: https://api.tavily.com/search)
+//
+// Agent Configuration:
+// - AGENT_MAX_ITERATIONS: Max tool iterations per request (default: 10)
+// - AGENT_BUNDLE_CONCURRENCY: Parallel bundle workers (default: 1)
 
 type Config struct {
 	// LLM Configuration
@@ -83,8 +93,6 @@ type LLMConfig struct {
 	MaxTokens   int     `json:"max_tokens"`
 	Temperature float64 `json:"temperature"`
 	Timeout     int     `json:"timeout"`
-	SiteURL     string  `json:"site_url"`
-	AppName     string  `json:"app_name"`
 }
 
 // MediaConfig holds the configuration for media directories
@@ -129,6 +137,8 @@ type Option func(*Config)
 
 // NewFromEnv creates a new Config instance with values from environment variables and options
 func NewFromEnv(opts ...Option) (*Config, error) {
+	log.InitLogger(log.ParseLevel(getEnvString("LOG_LEVEL", "INFO")))
+
 	config := &Config{
 		LLM: LLMConfig{
 			APIKey:      getEnvString("LLM_API_KEY", ""),
@@ -137,8 +147,6 @@ func NewFromEnv(opts ...Option) (*Config, error) {
 			MaxTokens:   getEnvInt("LLM_MAX_TOKENS", 8000),
 			Temperature: getEnvFloat("LLM_TEMPERATURE", 0.7),
 			Timeout:     getEnvInt("LLM_TIMEOUT", 30),
-			SiteURL:     getEnvString("LLM_SITE_URL", ""),
-			AppName:     getEnvString("LLM_APP_NAME", ""),
 		},
 		Media: MediaConfig{
 			MovieDir:       getEnvString("MOVIE_DIR", "/movies"),
@@ -168,7 +176,16 @@ func NewFromEnv(opts ...Option) (*Config, error) {
 		},
 	}
 
-	log.Info("Config: %v", config)
+	log.Debug(
+		"Config loaded: llm_api_url=%s llm_model=%s llm_timeout=%d search_enabled=%t cron_expr=%s agent_max_iterations=%d agent_bundle_concurrency=%d",
+		config.LLM.APIURL,
+		config.LLM.Model,
+		config.LLM.Timeout,
+		config.Search.APIKey != "",
+		config.Translate.CronExpr,
+		config.Agent.MaxIterations,
+		config.Agent.BundleConcurrency,
+	)
 
 	// Apply custom options
 	for _, opt := range opts {

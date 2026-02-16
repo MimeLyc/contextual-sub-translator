@@ -65,6 +65,9 @@ func (s transService) Schedule(
 			return nil, nil
 		})
 	}
+	// Run once immediately on startup
+	go runFunc()
+
 	_, err := s.cron.AddFunc(s.cronExpr, runFunc)
 	return err
 }
@@ -87,8 +90,6 @@ func (s transService) run(
 		MaxTokens:   s.cfg.LLM.MaxTokens,
 		Temperature: s.cfg.LLM.Temperature,
 		Timeout:     s.cfg.LLM.Timeout,
-		SiteURL:     s.cfg.LLM.SiteURL,
-		AppName:     s.cfg.LLM.AppName,
 	}
 
 	registry := tools.NewRegistry()
@@ -146,6 +147,10 @@ func (s transService) processBundle(
 	llmAgent *agent.LLMAgent,
 	searchEnabled bool,
 ) error {
+	if len(bundle.SubtitleFiles) == 0 {
+		log.Info("Skipping media %s: no subtitle files available", bundle.MediaFile)
+		return nil
+	}
 	targetSub := bundle.SubtitleFiles[0]
 	agentTranslator := translator.NewAgentTranslator(llmAgent, searchEnabled)
 
@@ -198,7 +203,11 @@ func (s transService) processBundle(
 		return err
 	}
 
-	if _, err := transLator.Translate(ctx, bundle.NFOFiles[0].Path); err != nil {
+	nfoPath := ""
+	if len(bundle.NFOFiles) > 0 {
+		nfoPath = bundle.NFOFiles[0].Path
+	}
+	if _, err := transLator.Translate(ctx, nfoPath); err != nil {
 		log.Error("Failed to translate subtitle media %s: %v", bundle.MediaFile, err)
 		return err
 	}

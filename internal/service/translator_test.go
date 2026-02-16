@@ -560,12 +560,9 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 	_, err = os.Stat(outputPath)
 	assert.NoError(t, err)
 
-	// Log some translation results for verification
-	for i, line := range result.TranslatedFile.Lines {
-		if i < 3 { // Only log first 3 for brevity
-			t.Logf("Line %d - Original: %s", i+1, line.Text)
-			t.Logf("Line %d - Translated: %s", i+1, line.TranslatedText)
-		}
+	// Ensure translated lines contain content for quick smoke coverage
+	for i := 0; i < min(3, len(result.TranslatedFile.Lines)); i++ {
+		assert.NotEmpty(t, result.TranslatedFile.Lines[i].TranslatedText)
 	}
 }
 

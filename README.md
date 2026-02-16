@@ -29,19 +29,31 @@ docker-compose up
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `LLM_API_KEY` | API key for LLM provider | `sk-or-v1-xxxxx` |
-| `LLM_API_URL` | LLM API endpoint | `https://openrouter.ai/api/v1` |
-| `LLM_MODEL` | Model to use | `google/gemini-2.5-flash` |
 
 ### Optional Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `LLM_API_URL` | LLM API endpoint | `https://openrouter.ai/api/v1` |
+| `LLM_MODEL` | Model to use | `openai/gpt-3.5-turbo` |
+| `LLM_MAX_TOKENS` | Max tokens per request | `8000` |
+| `LLM_TEMPERATURE` | Sampling temperature | `0.7` |
+| `LLM_TIMEOUT` | Request timeout (seconds) | `30` |
 | `SEARCH_API_KEY` | Tavily API key for web search | (empty - disables search) |
 | `SEARCH_API_URL` | Search API endpoint | `https://api.tavily.com/search` |
 | `AGENT_MAX_ITERATIONS` | Max tool calling iterations | `10` |
-| `LLM_MAX_TOKENS` | Max tokens per request | `8000` |
-| `LLM_TEMPERATURE` | Sampling temperature | `0.7` |
-| `LLM_TIMEOUT` | Request timeout (seconds) | `120` |
+| `AGENT_BUNDLE_CONCURRENCY` | Parallel bundle workers | `1` |
+| `LOG_LEVEL` | Log level (`DEBUG/INFO/WARN/ERROR/FATAL`) | `INFO` |
+| `CRON_EXPR` | Cron expression for scheduled translation | `0 0 * * *` |
+| `MOVIE_DIR` | Movie root directory | `/movies` |
+| `ANIMATION_DIR` | Animation root directory | `/animations` |
+| `TELEPLAY_DIR` | Teleplay root directory | `/teleplays` |
+| `SHOW_DIR` | Show root directory | `/shows` |
+| `DOCUMENTARY_DIR` | Documentary root directory | `/documentaries` |
+| `PUID` | Container user id | `1000` |
+| `PGID` | Container group id | `1000` |
+| `TZ` | Timezone | `UTC` |
+| `ZONE` | Zone info | `local` |
 
 ### Web Search (Tavily API)
 
