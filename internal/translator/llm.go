@@ -100,12 +100,12 @@ func (t *agentTranslator) Translate(
 		}
 
 		previousOutput = result.Content
-		log.Info("Agent translate call completed: lines=%d, iterations=%d, tool_calls=%d", len(subtitleTexts), result.Iterations, len(result.ToolCalls))
+		log.Debug("Agent translate call completed: lines=%d, iterations=%d, tool_calls=%d", len(subtitleTexts), result.Iterations, len(result.ToolCalls))
 
 		if len(result.ToolCalls) > 0 {
-			log.Info("Agent used %d tool calls in %d iterations", len(result.ToolCalls), result.Iterations)
+			log.Debug("Agent used %d tool calls in %d iterations", len(result.ToolCalls), result.Iterations)
 			for _, tc := range result.ToolCalls {
-				log.Info("  - Tool: %s, Error: %v", tc.ToolName, tc.IsError)
+				log.Debug("  - Tool: %s, Error: %v", tc.ToolName, tc.IsError)
 			}
 			t.mu.Lock()
 			t.collectedCalls = append(t.collectedCalls, result.ToolCalls...)
@@ -216,7 +216,7 @@ func (t *agentTranslator) batchTranslate(
 		}
 
 		allTranslations = append(allTranslations, translations...)
-		log.Info("Batch translated lines %d-%d in %s (size=%d)", i+1, end, time.Since(batchStart), len(subtitleTexts))
+		log.Debug("Batch translated lines %d-%d in %s (size=%d)", i+1, end, time.Since(batchStart), len(subtitleTexts))
 	}
 
 	return allTranslations, nil

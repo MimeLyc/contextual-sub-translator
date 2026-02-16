@@ -34,13 +34,17 @@ WORKDIR /root/
 COPY --from=builder /app/main .
 
 # Set environment variables with defaults
+ENV LLM_API_KEY=""
 ENV LLM_API_URL=https://openrouter.ai/api/v1
 ENV LLM_MODEL=openai/gpt-3.5-turbo
 ENV LLM_MAX_TOKENS=8000
 ENV LLM_TEMPERATURE=0.7
 ENV LLM_TIMEOUT=30
-ENV LLM_SITE_URL=""
-ENV LLM_APP_NAME=""
+ENV SEARCH_API_KEY=""
+ENV SEARCH_API_URL=https://api.tavily.com/search
+ENV AGENT_MAX_ITERATIONS=10
+ENV AGENT_BUNDLE_CONCURRENCY=1
+ENV LOG_LEVEL=INFO
 
 ENV MOVIE_DIR=/movies
 ENV ANIMATION_DIR=/animations
@@ -60,4 +64,3 @@ VOLUME ["/movies", "/animations", "/teleplays", "/shows", "/documentaries"]
 
 # Run the application
 CMD ["./main"]
-

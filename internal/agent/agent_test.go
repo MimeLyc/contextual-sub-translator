@@ -145,13 +145,9 @@ func TestUnsupportedConfigNotes(t *testing.T) {
 
 	notes := unsupportedConfigNotes(LLMConfig{
 		Temperature: 0.2,
-		SiteURL:     "https://example.com",
-		AppName:     "ctxtrans",
 	})
 
 	assert.Contains(t, notes, "temperature")
-	assert.Contains(t, notes, "site_url")
-	assert.Contains(t, notes, "app_name")
 }
 
 func TestLLMAgent_Execute_ReasoningContentErrorReturnsFailure(t *testing.T) {

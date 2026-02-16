@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,24 @@ var levelNames = map[LogLevel]string{
 	LevelWarn:  "WARN",
 	LevelError: "ERROR",
 	LevelFatal: "FATAL",
+}
+
+// ParseLevel parses a string log level. Unknown values fall back to info.
+func ParseLevel(level string) LogLevel {
+	switch strings.ToUpper(strings.TrimSpace(level)) {
+	case "DEBUG":
+		return LevelDebug
+	case "INFO":
+		return LevelInfo
+	case "WARN", "WARNING":
+		return LevelWarn
+	case "ERROR":
+		return LevelError
+	case "FATAL":
+		return LevelFatal
+	default:
+		return LevelInfo
+	}
 }
 
 type Logger struct {

@@ -14,7 +14,7 @@ import (
 )
 
 // LLMConfig configures the underlying LLM provider for the agent.
-// Temperature/SiteURL/AppName are kept for backward compatibility.
+// Temperature is kept for backward compatibility.
 // The current agent-core-go API path does not expose these knobs yet.
 type LLMConfig struct {
 	APIKey      string
@@ -23,8 +23,6 @@ type LLMConfig struct {
 	MaxTokens   int
 	Temperature float64
 	Timeout     int
-	SiteURL     string
-	AppName     string
 }
 
 // Validate validates the configuration.
@@ -179,12 +177,6 @@ func unsupportedConfigNotes(cfg LLMConfig) []string {
 	var notes []string
 	if cfg.Temperature != 0 {
 		notes = append(notes, "temperature")
-	}
-	if strings.TrimSpace(cfg.SiteURL) != "" {
-		notes = append(notes, "site_url")
-	}
-	if strings.TrimSpace(cfg.AppName) != "" {
-		notes = append(notes, "app_name")
 	}
 	return notes
 }

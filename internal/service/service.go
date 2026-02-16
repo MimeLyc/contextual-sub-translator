@@ -87,8 +87,6 @@ func (s transService) run(
 		MaxTokens:   s.cfg.LLM.MaxTokens,
 		Temperature: s.cfg.LLM.Temperature,
 		Timeout:     s.cfg.LLM.Timeout,
-		SiteURL:     s.cfg.LLM.SiteURL,
-		AppName:     s.cfg.LLM.AppName,
 	}
 
 	registry := tools.NewRegistry()
