@@ -144,6 +144,10 @@ func (s transService) processBundle(
 	llmAgent *agent.LLMAgent,
 	searchEnabled bool,
 ) error {
+	if len(bundle.SubtitleFiles) == 0 {
+		log.Info("Skipping media %s: no subtitle files available", bundle.MediaFile)
+		return nil
+	}
 	targetSub := bundle.SubtitleFiles[0]
 	agentTranslator := translator.NewAgentTranslator(llmAgent, searchEnabled)
 
@@ -196,7 +200,11 @@ func (s transService) processBundle(
 		return err
 	}
 
-	if _, err := transLator.Translate(ctx, bundle.NFOFiles[0].Path); err != nil {
+	nfoPath := ""
+	if len(bundle.NFOFiles) > 0 {
+		nfoPath = bundle.NFOFiles[0].Path
+	}
+	if _, err := transLator.Translate(ctx, nfoPath); err != nil {
 		log.Error("Failed to translate subtitle media %s: %v", bundle.MediaFile, err)
 		return err
 	}

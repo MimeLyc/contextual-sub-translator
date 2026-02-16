@@ -10,6 +10,7 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/file"
+	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
 	"golang.org/x/text/language"
 )
 
@@ -63,16 +64,15 @@ func (t *SubTranslator) Translate(
 	// setup outputPath
 	outputPath := t.config.OutputPath()
 
-	// Read NFO file
-	tvShowInfo, err := t.nfoReader.ReadTVShowInfo(tvshowNFOPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read NFO file: %w", err)
-	}
-
-	// Use empty info if context is not enabled
+	// Read NFO file (optional — translate without context if unavailable)
 	var contextInfo media.TVShowInfo
-	if t.config.ContextEnabled {
-		contextInfo = *tvShowInfo
+	if tvshowNFOPath != "" {
+		tvShowInfo, err := t.nfoReader.ReadTVShowInfo(tvshowNFOPath)
+		if err != nil {
+			log.Error("Failed to read NFO file %s, continuing without context: %v", tvshowNFOPath, err)
+		} else if t.config.ContextEnabled {
+			contextInfo = *tvShowInfo
+		}
 	}
 	// Perform translation
 	translations, err := t.translateSubtitleLines(
@@ -106,7 +106,7 @@ func (t *SubTranslator) Translate(
 			SourceLanguage: t.file.Language,
 			TargetLanguage: t.config.TargetLanguage,
 			// ModelUsed:      "gpt-3.5-turbo", // can be obtained from LLM client
-			ContextSummary: GetContextTextFromTVShow(tvShowInfo),
+			ContextSummary: GetContextTextFromTVShow(&contextInfo),
 			// TranslationTime: time.Since(startTime),
 			CharCount: countCharacters(t.file.Lines),
 		},
