@@ -60,15 +60,57 @@ func TestMatch_CaseSensitive(t *testing.T) {
 	assert.Len(t, result.Matched, 1)
 }
 
-func TestMatch_SubstringMatch(t *testing.T) {
+func TestMatch_WordBoundary(t *testing.T) {
+	tm := TermMap{
+		"elf": "精灵",
+	}
+
+	// "elf" as part of "herself" should NOT match
+	result := Match(tm, []string{"She found herself alone."})
+	assert.Empty(t, result.Matched)
+
+	// "elf" as a standalone word should match
+	result = Match(tm, []string{"The elf cast a spell."})
+	assert.Len(t, result.Matched, 1)
+	assert.Equal(t, "精灵", result.Matched["elf"])
+
+	// "elf" at end of sentence
+	result = Match(tm, []string{"She met an elf"})
+	assert.Len(t, result.Matched, 1)
+
+	// "elf" at start of sentence
+	result = Match(tm, []string{"elf warriors attacked"})
+	assert.Len(t, result.Matched, 1)
+}
+
+func TestMatch_WordBoundary_MultiWord(t *testing.T) {
 	tm := TermMap{
 		"Dan": "但",
 	}
 
-	// Should match as substring
+	// "Dan" inside "DanDaDan" should NOT match (no boundary after "Dan")
 	result := Match(tm, []string{"DanDaDan is great"})
+	assert.Empty(t, result.Matched)
+
+	// "Dan" as standalone should match
+	result = Match(tm, []string{"Dan is great"})
 	assert.Len(t, result.Matched, 1)
-	assert.Equal(t, "但", result.Matched["Dan"])
+}
+
+func TestMatch_WordBoundary_Punctuation(t *testing.T) {
+	tm := TermMap{
+		"Elf": "精灵",
+	}
+
+	// Punctuation counts as word boundary
+	result := Match(tm, []string{"Look, an Elf!"})
+	assert.Len(t, result.Matched, 1)
+
+	result = Match(tm, []string{"(Elf)"})
+	assert.Len(t, result.Matched, 1)
+
+	result = Match(tm, []string{`"Elf"`})
+	assert.Len(t, result.Matched, 1)
 }
 
 func TestMatch_MultipleTextsOneTerm(t *testing.T) {
@@ -79,4 +121,12 @@ func TestMatch_MultipleTextsOneTerm(t *testing.T) {
 	// Term appears in multiple texts, should only be in result once
 	result := Match(tm, []string{"Okarun here", "Okarun there"})
 	assert.Len(t, result.Matched, 1)
+}
+
+func TestContainsWordFold(t *testing.T) {
+	// Case-insensitive word boundary match
+	assert.True(t, ContainsWordFold("The Elf is here", "elf"))
+	assert.True(t, ContainsWordFold("the elf is here", "Elf"))
+	assert.False(t, ContainsWordFold("herself", "elf"))
+	assert.False(t, ContainsWordFold("HERSELF", "elf"))
 }

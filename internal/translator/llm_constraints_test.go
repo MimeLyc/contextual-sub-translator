@@ -77,6 +77,31 @@ func TestValidateTermMappings_OK(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidateTermMappings_SubstringNotFalsePositive(t *testing.T) {
+	t.Parallel()
+
+	// "elf" inside "herself" should NOT trigger the term mapping check
+	err := validateTermMappings(
+		[]string{"She found herself alone in the dark."},
+		[]string{"她发现自己独自处于黑暗之中。"},
+		map[string]string{"elf": "精灵"},
+	)
+	require.NoError(t, err)
+}
+
+func TestValidateTermMappings_StandaloneTermMatches(t *testing.T) {
+	t.Parallel()
+
+	// "elf" as a standalone word SHOULD trigger the check
+	err := validateTermMappings(
+		[]string{"The elf cast a powerful spell."},
+		[]string{"那个战士施放了强力法术。"},
+		map[string]string{"elf": "精灵"},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "elf")
+}
+
 func TestParseTranslationOutput_DuplicateIndex(t *testing.T) {
 	t.Parallel()
 

@@ -477,7 +477,6 @@ func validateTermMappings(sourceLines []string, translatedLines []string, termMa
 
 	violations := make([]string, 0, 3)
 	for lineIndex := range sourceLines {
-		sourceLower := strings.ToLower(sourceLines[lineIndex])
 		translatedLower := strings.ToLower(translatedLines[lineIndex])
 
 		for _, source := range sortedSources {
@@ -487,7 +486,7 @@ func validateTermMappings(sourceLines []string, translatedLines []string, termMa
 				continue
 			}
 
-			if strings.Contains(sourceLower, strings.ToLower(source)) && !strings.Contains(translatedLower, strings.ToLower(target)) {
+			if termmap.ContainsWordFold(sourceLines[lineIndex], source) && !strings.Contains(translatedLower, strings.ToLower(target)) {
 				violations = append(violations, fmt.Sprintf("line %d requires %q -> %q", lineIndex+1, source, target))
 				if len(violations) == cap(violations) {
 					return fmt.Errorf("term mapping constraint violated: %s", strings.Join(violations, "; "))
