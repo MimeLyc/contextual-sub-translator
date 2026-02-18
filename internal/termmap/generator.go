@@ -77,7 +77,8 @@ func (g *Generator) compileSearchResults(
 	)
 	userMessage := fmt.Sprintf(
 		"Here are search results about %q. Extract all %s -> %s term mappings "+
-			"(character names, places, terminology) and return them as a single JSON object:\n\n%s",
+			"(character names, places, terminology) and return them as a single JSON object. "+
+			"Do NOT call any tools; directly produce the JSON object from the provided search results:\n\n%s",
 		showInfo.Title, sourceLang, targetLang, searchData.String(),
 	)
 
@@ -85,7 +86,7 @@ func (g *Generator) compileSearchResults(
 	return g.agent.Execute(ctx, agent.AgentRequest{
 		SystemPrompt:  systemPrompt,
 		UserMessage:   userMessage,
-		MaxIterations: 1,
+		MaxIterations: 3,
 	})
 }
 
@@ -121,14 +122,15 @@ func (g *Generator) ExtractNewTerms(
 	)
 	userMessage := fmt.Sprintf(
 		"Here are search results about %q. Extract all %s -> %s term mappings "+
-			"(character names, places, terminology) and return them as a single JSON object:\n\n%s",
+			"(character names, places, terminology) and return them as a single JSON object. "+
+			"Do NOT call any tools; directly produce the JSON object from the provided search results:\n\n%s",
 		showTitle, sourceLang, targetLang, searchData.String(),
 	)
 
 	result, err := g.agent.Execute(ctx, agent.AgentRequest{
 		SystemPrompt:  systemPrompt,
 		UserMessage:   userMessage,
-		MaxIterations: 1,
+		MaxIterations: 3,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract terms from search results: %w", err)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/agent"
 	"github.com/MimeLyc/contextual-sub-translator/internal/config"
+	"github.com/MimeLyc/contextual-sub-translator/internal/jobs"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/MimeLyc/contextual-sub-translator/internal/termmap"
@@ -28,10 +29,14 @@ import (
 )
 
 type transService struct {
+	mu             sync.RWMutex
 	cfg            config.Config
 	lastTrigerTime time.Time
 	cronExpr       string
 	cron           *cron.Cron
+	jobQueue       *jobs.Queue
+	runFunc        func()
+	cronEntryID    cron.EntryID
 }
 
 func NewRunnableTransService(
@@ -45,17 +50,97 @@ func NewRunnableTransService(
 	}
 }
 
+func NewRunnableTransServiceWithQueue(
+	cfg config.Config,
+	cron *cron.Cron,
+	queue *jobs.Queue,
+) transService {
+	svc := NewRunnableTransService(cfg, cron)
+	svc.jobQueue = queue
+	return svc
+}
+
+func (s *transService) enqueueCronBundle(bundle MediaPathBundle) (*jobs.TranslationJob, bool, error) {
+	return s.enqueueBundle("cron", bundle)
+}
+
+func (s *transService) enqueueManualBundle(bundle MediaPathBundle) (*jobs.TranslationJob, bool, error) {
+	return s.enqueueBundle("manual", bundle)
+}
+
+func (s *transService) enqueueBundle(source string, bundle MediaPathBundle) (*jobs.TranslationJob, bool, error) {
+	if s.jobQueue == nil {
+		return nil, false, fmt.Errorf("job queue is not configured")
+	}
+	dedupeKey := s.bundleDedupeKey(bundle)
+	payload := jobs.JobPayload{
+		MediaFile: bundle.MediaFile,
+	}
+	if len(bundle.SubtitleFiles) > 0 {
+		payload.SubtitleFile = bundle.SubtitleFiles[0]
+	}
+	if len(bundle.NFOFiles) > 0 {
+		payload.NFOFile = bundle.NFOFiles[0]
+	}
+	job, created := s.jobQueue.Enqueue(jobs.EnqueueRequest{
+		Source:    source,
+		DedupeKey: dedupeKey,
+		Payload:   payload,
+	})
+	return job, created, nil
+}
+
+func (s *transService) bundleDedupeKey(bundle MediaPathBundle) string {
+	cfg := s.configSnapshot()
+	subPath := ""
+	if len(bundle.SubtitleFiles) > 0 {
+		subPath = bundle.SubtitleFiles[0]
+	}
+	return fmt.Sprintf(
+		"%s|%s|%s",
+		bundle.MediaFile,
+		subPath,
+		cfg.Translate.TargetLanguage.String(),
+	)
+}
+
 var singleflightGroup singleflight.Group
 var termMapFileLocks sync.Map
 
-func (s transService) Schedule(
+func (s *transService) configSnapshot() config.Config {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
+}
+
+func (s *transService) scheduleSnapshot() (cron.EntryID, string, func()) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cronEntryID, s.cronExpr, s.runFunc
+}
+
+func (s *transService) Schedule(
 	ctx context.Context,
 ) error {
 	log.Info("Run TransService")
+	if s.jobQueue != nil {
+		s.jobQueue.Start(func(execCtx context.Context, job *jobs.TranslationJob) error {
+			llmAgent, searchEnabled, err := s.buildAgent()
+			if err != nil {
+				return err
+			}
+			return s.processJob(execCtx, job, llmAgent, searchEnabled)
+		})
+		go func() {
+			<-ctx.Done()
+			s.jobQueue.Stop()
+		}()
+	}
 
 	runFunc := func() {
 		_, _, _ = singleflightGroup.Do("run", func() (any, error) {
-			for _, dir := range s.cfg.Media.MediaPaths() {
+			cfg := s.configSnapshot()
+			for _, dir := range cfg.Media.MediaPaths() {
 				log.Info("Run in dir %s", dir)
 				err := s.run(ctx, dir)
 				if err != nil {
@@ -68,11 +153,54 @@ func (s transService) Schedule(
 	// Run once immediately on startup
 	go runFunc()
 
-	_, err := s.cron.AddFunc(s.cronExpr, runFunc)
-	return err
+	_, cronExpr, _ := s.scheduleSnapshot()
+	entryID, err := s.cron.AddFunc(cronExpr, runFunc)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.runFunc = runFunc
+	s.cronEntryID = entryID
+	s.mu.Unlock()
+	return nil
 }
 
-func (s transService) run(
+func (s *transService) ApplyRuntimeSettings(next config.RuntimeSettings) error {
+	if err := next.Validate(); err != nil {
+		return err
+	}
+	targetTag, err := language.Parse(next.TargetLanguage)
+	if err != nil {
+		return fmt.Errorf("invalid target_language: %w", err)
+	}
+
+	oldEntryID, oldCronExpr, runFunc := s.scheduleSnapshot()
+	newEntryID := oldEntryID
+	if runFunc != nil && next.CronExpr != oldCronExpr {
+		entryID, err := s.cron.AddFunc(next.CronExpr, runFunc)
+		if err != nil {
+			return fmt.Errorf("failed to apply cron expression %q: %w", next.CronExpr, err)
+		}
+		if oldEntryID != 0 {
+			s.cron.Remove(oldEntryID)
+		}
+		newEntryID = entryID
+	}
+
+	s.mu.Lock()
+	s.cfg.LLM.APIURL = next.LLMAPIURL
+	s.cfg.LLM.APIKey = next.LLMAPIKey
+	s.cfg.LLM.Model = next.LLMModel
+	s.cfg.Translate.CronExpr = next.CronExpr
+	s.cfg.Translate.TargetLanguage = targetTag
+	s.cronExpr = next.CronExpr
+	s.cronEntryID = newEntryID
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *transService) run(
 	ctx context.Context,
 	dir string,
 ) error {
@@ -83,35 +211,22 @@ func (s transService) run(
 	}
 	log.Info("Found %d target media tuples in dir %s", len(toTrans), dir)
 
-	llmConfig := agent.LLMConfig{
-		APIKey:      s.cfg.LLM.APIKey,
-		APIURL:      s.cfg.LLM.APIURL,
-		Model:       s.cfg.LLM.Model,
-		MaxTokens:   s.cfg.LLM.MaxTokens,
-		Temperature: s.cfg.LLM.Temperature,
-		Timeout:     s.cfg.LLM.Timeout,
-	}
-
-	registry := tools.NewRegistry()
-	searchEnabled := false
-
-	if s.cfg.Search.APIKey != "" {
-		webSearchTool := tools.NewWebSearchTool(s.cfg.Search.APIKey, s.cfg.Search.APIURL)
-		if err := registry.Register(webSearchTool); err != nil {
-			log.Error("Failed to register web_search tool: %v", err)
-		} else {
-			searchEnabled = true
-			log.Info("Web search tool enabled")
+	if s.jobQueue != nil {
+		for _, bundle := range toTrans {
+			if err := s.enqueueCronMediaBundle(bundle); err != nil {
+				log.Error("Failed to enqueue cron bundle for media %s: %v", bundle.MediaFile, err)
+			}
 		}
+		return nil
 	}
 
-	llmAgent, err := agent.NewLLMAgent(llmConfig, registry, s.cfg.Agent.MaxIterations)
+	llmAgent, searchEnabled, err := s.buildAgent()
 	if err != nil {
-		log.Error("Failed to create agent-core-go agent: %v", err)
 		return err
 	}
 
-	bundleConcurrency := max(1, s.cfg.Agent.BundleConcurrency)
+	cfg := s.configSnapshot()
+	bundleConcurrency := max(1, cfg.Agent.BundleConcurrency)
 	if bundleConcurrency == 1 {
 		for _, bundle := range toTrans {
 			if err := s.processBundle(ctx, bundle, llmAgent, searchEnabled); err != nil {
@@ -141,7 +256,108 @@ func (s transService) run(
 	return group.Wait()
 }
 
-func (s transService) processBundle(
+func (s *transService) buildAgent() (*agent.LLMAgent, bool, error) {
+	cfg := s.configSnapshot()
+	llmConfig := agent.LLMConfig{
+		APIKey:      cfg.LLM.APIKey,
+		APIURL:      cfg.LLM.APIURL,
+		Model:       cfg.LLM.Model,
+		MaxTokens:   cfg.LLM.MaxTokens,
+		Temperature: cfg.LLM.Temperature,
+		Timeout:     cfg.LLM.Timeout,
+	}
+
+	registry := tools.NewRegistry()
+	searchEnabled := false
+
+	if cfg.Search.APIKey != "" {
+		webSearchTool := tools.NewWebSearchTool(cfg.Search.APIKey, cfg.Search.APIURL)
+		if err := registry.Register(webSearchTool); err != nil {
+			log.Error("Failed to register web_search tool: %v", err)
+		} else {
+			searchEnabled = true
+			log.Info("Web search tool enabled")
+		}
+	}
+
+	llmAgent, err := agent.NewLLMAgent(llmConfig, registry, cfg.Agent.MaxIterations)
+	if err != nil {
+		log.Error("Failed to create agent-core-go agent: %v", err)
+		return nil, false, err
+	}
+	return llmAgent, searchEnabled, nil
+}
+
+func (s *transService) enqueueCronMediaBundle(bundle MediaBundle) error {
+	if len(bundle.SubtitleFiles) == 0 {
+		log.Info("Skipping media %s: no subtitle files available", bundle.MediaFile)
+		return nil
+	}
+
+	pathBundle := MediaPathBundle{
+		MediaFile:     bundle.MediaFile,
+		SubtitleFiles: []string{bundle.SubtitleFiles[0].Path},
+	}
+	if len(bundle.NFOFiles) > 0 {
+		pathBundle.NFOFiles = []string{bundle.NFOFiles[0].Path}
+	}
+
+	job, created, err := s.enqueueCronBundle(pathBundle)
+	if err != nil {
+		return err
+	}
+	if created {
+		log.Info("Queued cron job %s for media %s", job.ID, bundle.MediaFile)
+	} else {
+		log.Info("Skipped duplicated cron job %s for media %s", job.ID, bundle.MediaFile)
+	}
+	return nil
+}
+
+func (s *transService) processJob(
+	ctx context.Context,
+	job *jobs.TranslationJob,
+	llmAgent *agent.LLMAgent,
+	searchEnabled bool,
+) error {
+	if job == nil {
+		return fmt.Errorf("job is nil")
+	}
+	if job.Payload.MediaFile == "" {
+		return fmt.Errorf("media_file is required")
+	}
+
+	subtitlePath := job.Payload.SubtitleFile
+	if subtitlePath == "" {
+		extracted, err := media.NewOperator(job.Payload.MediaFile).DefExtractSubtitle()
+		if err != nil {
+			return fmt.Errorf("failed to extract subtitle from media file %s: %w", job.Payload.MediaFile, err)
+		}
+		subtitlePath = extracted
+	}
+
+	subFile, err := subtitle.NewReader(subtitlePath).Read()
+	if err != nil {
+		return fmt.Errorf("failed to read subtitle file %s: %w", subtitlePath, err)
+	}
+
+	bundle := MediaBundle{
+		MediaFile:     job.Payload.MediaFile,
+		SubtitleFiles: []subtitle.File{*subFile},
+	}
+	if job.Payload.NFOFile != "" {
+		nfoInfo, err := NewNFOReader().ReadTVShowInfo(job.Payload.NFOFile)
+		if err != nil {
+			log.Error("Failed to read NFO file %s: %v", job.Payload.NFOFile, err)
+		} else {
+			bundle.NFOFiles = []media.TVShowInfo{*nfoInfo}
+		}
+	}
+
+	return s.processBundle(ctx, bundle, llmAgent, searchEnabled)
+}
+
+func (s *transService) processBundle(
 	ctx context.Context,
 	bundle MediaBundle,
 	llmAgent *agent.LLMAgent,
@@ -153,10 +369,11 @@ func (s transService) processBundle(
 	}
 	targetSub := bundle.SubtitleFiles[0]
 	agentTranslator := translator.NewAgentTranslator(llmAgent, searchEnabled)
+	cfg := s.configSnapshot()
 
 	var termMapData map[string]string
 	srcLang := targetSub.Language.String()
-	tgtLang := s.cfg.Translate.TargetLanguage.String()
+	tgtLang := cfg.Translate.TargetLanguage.String()
 	mediaDir := filepath.Dir(bundle.MediaFile)
 
 	tmPath := termmap.FindInAncestors(mediaDir, srcLang, tgtLang)
@@ -186,10 +403,10 @@ func (s transService) processBundle(
 		}
 	}
 
-	log.Info("Translating subtitle media %s from %s to %s", bundle.MediaFile, targetSub.Language, s.cfg.Translate.TargetLanguage)
+	log.Info("Translating subtitle media %s from %s to %s", bundle.MediaFile, targetSub.Language, cfg.Translate.TargetLanguage)
 	transLator, err := NewTranslator(
 		TranslatorConfig{
-			TargetLanguage: s.cfg.Translate.TargetLanguage,
+			TargetLanguage: cfg.Translate.TargetLanguage,
 			ContextEnabled: true,
 			SubtitleFile:   &targetSub,
 			OutputDir:      filepath.Dir(bundle.MediaFile),
@@ -240,10 +457,11 @@ func (s transService) processBundle(
 	return nil
 }
 
-func (s transService) findTargetMediaTuplesInDir(
+func (s *transService) findTargetMediaTuplesInDir(
 	ctx context.Context,
 	dir string,
 ) (ret []MediaBundle, err error) {
+	cfg := s.configSnapshot()
 	all, err := s.findSourceBundlesInDir(ctx, dir)
 	if err != nil {
 		return
@@ -258,7 +476,7 @@ func (s transService) findTargetMediaTuplesInDir(
 		}
 
 		// If target subtitle exists, skip
-		if containTargetSubtitle(subtitles, s.cfg.Translate.TargetLanguage) {
+		if containTargetSubtitle(subtitles, cfg.Translate.TargetLanguage) {
 			continue
 		}
 
@@ -267,9 +485,10 @@ func (s transService) findTargetMediaTuplesInDir(
 		subDescs, err := mediaReader.ReadSubtitleDescription()
 		if err != nil {
 			log.Error("Failed to read subtitle description of media file %s: %v", bundle.MediaFile, err)
-			continue
+			// Keep processing with external subtitle signals even if ffprobe is unavailable.
+			subDescs = nil
 		}
-		if subDescs.HasLanguage(s.cfg.Translate.TargetLanguage) {
+		if subDescs.HasLanguage(cfg.Translate.TargetLanguage) {
 			log.Info("Target subtitle already exists in media file %s", bundle.MediaFile)
 			continue
 		}
@@ -318,14 +537,50 @@ func (s transService) findTargetMediaTuplesInDir(
 // containTargetSubtitle checks if any subtitle file has the target language
 func containTargetSubtitle(subtitles []subtitle.File, targetLanguage language.Tag) bool {
 	for _, sub := range subtitles {
-		if sub.Language.String() == targetLanguage.String() {
+		if languageMatches(sub.Language, targetLanguage) {
+			return true
+		}
+		if subtitlePathMatchesLanguage(sub.Path, targetLanguage) {
 			return true
 		}
 	}
 	return false
 }
 
-func (s transService) readSubtitleFiles(
+func languageMatches(a, b language.Tag) bool {
+	if a == b {
+		return true
+	}
+	ab, _ := a.Base()
+	bb, _ := b.Base()
+	return ab.String() != "und" && ab == bb
+}
+
+func subtitlePathMatchesLanguage(path string, target language.Tag) bool {
+	if path == "" {
+		return false
+	}
+
+	fileName := strings.ToLower(filepath.Base(path))
+	ext := strings.ToLower(filepath.Ext(fileName))
+	if !isSubtitleFile(ext) {
+		return false
+	}
+
+	base := strings.TrimSuffix(fileName, ext)
+	idx := strings.LastIndex(base, ".")
+	if idx < 0 || idx == len(base)-1 {
+		return false
+	}
+	suffix := strings.ReplaceAll(base[idx+1:], "_", "-")
+	targetStr := strings.ToLower(strings.ReplaceAll(target.String(), "_", "-"))
+	targetBase, _ := target.Base()
+	targetBaseStr := strings.ToLower(targetBase.String())
+
+	return suffix == targetStr || suffix == targetBaseStr || strings.HasPrefix(suffix, targetBaseStr+"-")
+}
+
+func (s *transService) readSubtitleFiles(
 	ctx context.Context,
 	paths []string,
 ) ([]subtitle.File, error) {
@@ -342,7 +597,7 @@ func (s transService) readSubtitleFiles(
 	return ret, nil
 }
 
-func (s transService) findSourceBundlesInDir(
+func (s *transService) findSourceBundlesInDir(
 	_ context.Context,
 	dir string,
 ) ([]MediaPathBundle, error) {
@@ -413,10 +668,53 @@ func (s transService) findSourceBundlesInDir(
 // e.g. "movie.eng.srt" -> "movie"
 func getBaseName(filePath string) string {
 	fileName := filepath.Base(filePath)
-	if !strings.Contains(fileName, ".") {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	if ext == "" {
 		return fileName
 	}
-	return strings.Split(fileName, ".")[0]
+	base := strings.TrimSuffix(fileName, ext)
+
+	// For subtitle files, strip a trailing language suffix (e.g. ".eng", ".zh-cn")
+	// so "episode.eng.srt" and "episode.zh-cn.srt" map to the same media base.
+	if isSubtitleFile(ext) {
+		if idx := strings.LastIndex(base, "."); idx > 0 {
+			langSuffix := strings.ReplaceAll(base[idx+1:], "_", "-")
+			if looksLikeLanguageSuffix(langSuffix) {
+				return base[:idx]
+			}
+		}
+	}
+	return base
+}
+
+func looksLikeLanguageSuffix(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	parts := strings.Split(strings.ToLower(s), "-")
+	if len(parts) == 0 || len(parts) > 3 {
+		return false
+	}
+
+	for i, part := range parts {
+		if part == "" {
+			return false
+		}
+		// language: en, eng; region/script fragments: cn, tw, hans...
+		if i == 0 && (len(part) < 2 || len(part) > 3) {
+			return false
+		}
+		if i > 0 && (len(part) < 2 || len(part) > 4) {
+			return false
+		}
+		for _, r := range part {
+			if r < 'a' || r > 'z' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // findMatchingSubtitleFiles finds all subtitle files with the same base name
@@ -539,9 +837,14 @@ func withTermMapFileLock(path string, fn func() error) error {
 	return fn()
 }
 
-func (s transService) startTime() (time.Time, error) {
-	if s.lastTrigerTime.IsZero() {
-		cronSchedule, err := icron.GetTriggerInfo(s.cronExpr, time.Now())
+func (s *transService) startTime() (time.Time, error) {
+	s.mu.RLock()
+	lastTriggerTime := s.lastTrigerTime
+	cronExpr := s.cronExpr
+	s.mu.RUnlock()
+
+	if lastTriggerTime.IsZero() {
+		cronSchedule, err := icron.GetTriggerInfo(cronExpr, time.Now())
 		if err != nil {
 			return time.Time{}, fmt.Errorf("failed to get cron schedule: %w", err)
 		}
@@ -552,5 +855,5 @@ func (s transService) startTime() (time.Time, error) {
 		return cronSchedule.Last, nil
 	}
 
-	return s.lastTrigerTime, nil
+	return lastTriggerTime, nil
 }

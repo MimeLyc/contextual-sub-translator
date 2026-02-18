@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
-	"github.com/MimeLyc/contextual-sub-translator/pkg/file"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
 	"golang.org/x/text/language"
 )
@@ -70,7 +70,7 @@ func (ff ffmpeg) ExtractSubtitle(
 		buf := make([]byte, 0, 10*1024*1024)
 		scanner.Buffer(buf, 100*1024*1024)
 		for scanner.Scan() {
-			log.Info(scanner.Text())
+			log.Info("%s", scanner.Text())
 		}
 		if err := scanner.Err(); err != nil && err.Error() != "read |0: file already closed" {
 			log.Error("Execution failed: %v", err)
@@ -88,11 +88,11 @@ func (ff ffmpeg) ExtractSubtitle(
 
 // Extract subtitle from media file and save to target path
 func (ff ffmpeg) DefExtractSubtitle() (string, error) {
+	ext := filepath.Ext(ff.fileName)
+	stem := strings.TrimSuffix(ff.fileName, ext)
 	return ff.ExtractSubtitle(
 		ff.fileDir,
-		// TODO
-		file.ReplaceExt(ff.fileName, "ctxtrans.srt"))
-
+		stem+"_ctxtrans.srt")
 }
 
 func (ff ffmpeg) ReadSubtitleDescription() (subtitle.Descriptions, error) {

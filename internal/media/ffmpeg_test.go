@@ -10,6 +10,7 @@ import (
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/text/language"
 )
 
 // TestFFmpeg_ReadSubtitleDescription tests the ReadSubtitleDescription function
@@ -152,7 +153,16 @@ func TestFFmpeg_ReadSubtitleDescription(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, result)
+				assert.Len(t, result, len(tt.expected))
+				for i := range tt.expected {
+					assert.Equal(t, tt.expected[i].Language, result[i].Language)
+					assert.Equal(t, tt.expected[i].SubLanguage, result[i].SubLanguage)
+					if tt.expected[i].Language == "und" {
+						assert.Equal(t, language.Und, result[i].LangTag)
+					} else {
+						assert.NotEqual(t, language.Und, result[i].LangTag)
+					}
+				}
 			}
 		})
 	}

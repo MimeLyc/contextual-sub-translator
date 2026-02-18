@@ -65,6 +65,9 @@ type Config struct {
 
 	// Agent Configuration
 	Agent AgentConfig `json:"agent"`
+
+	// HTTP/UI Configuration
+	HTTP HTTPConfig `json:"http"`
 }
 
 type TranslateConfig struct {
@@ -82,6 +85,13 @@ type SearchConfig struct {
 type AgentConfig struct {
 	MaxIterations     int `json:"max_iterations"`     // Max tool calling iterations
 	BundleConcurrency int `json:"bundle_concurrency"` // Parallel bundle processing workers
+}
+
+// HTTPConfig holds HTTP server and UI static hosting configuration
+type HTTPConfig struct {
+	Addr        string `json:"addr"`
+	UIStaticDir string `json:"ui_static_dir"`
+	UIEnabled   bool   `json:"ui_enabled"`
 }
 
 // LLMConfig holds the configuration for LLM client
@@ -174,10 +184,15 @@ func NewFromEnv(opts ...Option) (*Config, error) {
 			MaxIterations:     getEnvInt("AGENT_MAX_ITERATIONS", 10),
 			BundleConcurrency: getEnvInt("AGENT_BUNDLE_CONCURRENCY", 1),
 		},
+		HTTP: HTTPConfig{
+			Addr:        getEnvString("HTTP_ADDR", ":8080"),
+			UIStaticDir: getEnvString("UI_STATIC_DIR", "/app/web"),
+			UIEnabled:   getEnvBool("UI_ENABLE", true),
+		},
 	}
 
 	log.Debug(
-		"Config loaded: llm_api_url=%s llm_model=%s llm_timeout=%d search_enabled=%t cron_expr=%s agent_max_iterations=%d agent_bundle_concurrency=%d",
+		"Config loaded: llm_api_url=%s llm_model=%s llm_timeout=%d search_enabled=%t cron_expr=%s agent_max_iterations=%d agent_bundle_concurrency=%d http_addr=%s ui_enabled=%t ui_static_dir=%s",
 		config.LLM.APIURL,
 		config.LLM.Model,
 		config.LLM.Timeout,
@@ -185,6 +200,9 @@ func NewFromEnv(opts ...Option) (*Config, error) {
 		config.Translate.CronExpr,
 		config.Agent.MaxIterations,
 		config.Agent.BundleConcurrency,
+		config.HTTP.Addr,
+		config.HTTP.UIEnabled,
+		config.HTTP.UIStaticDir,
 	)
 
 	// Apply custom options
@@ -231,6 +249,16 @@ func getEnvFloat(key string, defaultValue float64) float64 {
 	if value := os.Getenv(key); value != "" {
 		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
 			return floatValue
+		}
+	}
+	return defaultValue
+}
+
+// getEnvBool gets a boolean value from environment variables with default
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
 		}
 	}
 	return defaultValue

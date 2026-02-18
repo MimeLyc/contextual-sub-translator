@@ -1,39 +1,34 @@
-# Build stage
-FROM golang:1.24-alpine AS builder
+FROM node:20-alpine AS web-builder
 
-# Set working directory
+WORKDIR /web
+COPY web/package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+COPY web/ ./
+RUN npm run build
+
+FROM golang:1.24-alpine AS go-builder
+
 WORKDIR /app
-
-# Install ca-certificates for HTTPS
 RUN apk add --no-cache ca-certificates
 
-# Copy go mod files
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
 
-# Copy source code
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /out/ctxtrans ./cmd/main.go
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main cmd/main.go
-
-# Final stage
 FROM debian:bullseye-slim
 
-# Install ca-certificates for HTTPS and ffmpeg/ffprobe
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /root/
+WORKDIR /app
 
-# Copy the binary from builder stage
-COPY --from=builder /app/main .
+COPY --from=go-builder /out/ctxtrans /app/ctxtrans
+COPY --from=web-builder /web/dist /app/web
 
-# Set environment variables with defaults
 ENV LLM_API_KEY=""
 ENV LLM_API_URL=https://openrouter.ai/api/v1
 ENV LLM_MODEL=openai/gpt-3.5-turbo
@@ -45,6 +40,9 @@ ENV SEARCH_API_URL=https://api.tavily.com/search
 ENV AGENT_MAX_ITERATIONS=10
 ENV AGENT_BUNDLE_CONCURRENCY=1
 ENV LOG_LEVEL=INFO
+ENV HTTP_ADDR=:8080
+ENV UI_STATIC_DIR=/app/web
+ENV UI_ENABLE=true
 
 ENV MOVIE_DIR=/movies
 ENV ANIMATION_DIR=/animations
@@ -56,11 +54,9 @@ ENV PUID=1000
 ENV PGID=1000
 ENV TZ=UTC
 ENV ZONE=local
-
 ENV CRON_EXPR="0 0 * * *"
 
-# Create volume mount points
 VOLUME ["/movies", "/animations", "/teleplays", "/shows", "/documentaries"]
+EXPOSE 8080
 
-# Run the application
-CMD ["./main"]
+CMD ["/app/ctxtrans"]
