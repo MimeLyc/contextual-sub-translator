@@ -22,7 +22,6 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/termmap"
 	"github.com/MimeLyc/contextual-sub-translator/internal/tools"
 	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
-	"github.com/MimeLyc/contextual-sub-translator/pkg/file"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/icron"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
 	"github.com/robfig/cron/v3"
@@ -612,21 +611,26 @@ func (s *transService) findSourceBundlesInDir(
 	}
 	log.Info("Start searching target metdia files after time: %v", startTime)
 
-	// Step 1: Find target files (subtitles or media files)
+	// Step 1: Find all target files (subtitles or media files)
 	var targetFiles []string
 
-	// Find files modified after lastTrigerTime
-	recentFiles, err := file.FindRecentAfter(dir, startTime)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find recent files: %w", err)
-	}
-
-	// Filter for target files (subtitles or media files)
-	for _, filePath := range recentFiles {
-		ext := strings.ToLower(filepath.Ext(filePath))
-		if isSubtitleFile(ext) || isMediaFile(ext) {
-			targetFiles = append(targetFiles, filePath)
+	// Walk all files and keep media/subtitle candidates.
+	err = filepath.Walk(dir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
+		if info.IsDir() {
+			return nil
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		if isSubtitleFile(ext) || isMediaFile(ext) {
+			targetFiles = append(targetFiles, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan files: %w", err)
 	}
 
 	// Step 2: For each target file, find matching files
@@ -651,11 +655,23 @@ func (s *transService) findSourceBundlesInDir(
 		// Find matching media file
 		bundle.MediaFile = findMatchingMediaFile(baseDir, baseName)
 
-		// Find NFO files in current or parent directories
-		bundle.NFOFiles = findNFOFiles(baseDir)
+		// Find NFO files in current or parent directories and prefer episode-level NFO.
+		nfoFiles := findNFOFiles(baseDir)
+		if episodeNFO := findEpisodeNFOFile(baseDir, baseName); episodeNFO != "" {
+			nfoFiles = append([]string{episodeNFO}, nfoFiles...)
+		}
+		bundle.NFOFiles = dedupePaths(nfoFiles)
 
 		// Add bundle if it has at least a subtitle or media file
 		if len(bundle.SubtitleFiles) > 0 || bundle.MediaFile != "" {
+			releaseDate, hasReleaseDate := releaseDateFromNFOFiles(bundle.NFOFiles)
+			if !hasReleaseDate {
+				log.Info("Skip bundle %s: release date is unavailable", baseName)
+				continue
+			}
+			if releaseDate.Before(startTime) {
+				continue
+			}
 			bundles = append(bundles, bundle)
 		}
 	}
@@ -784,6 +800,85 @@ func findNFOFiles(startDir string) []string {
 	return nfoFiles
 }
 
+func findEpisodeNFOFile(dir, baseName string) string {
+	candidate := filepath.Join(dir, baseName+".nfo")
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
+	return ""
+}
+
+func dedupePaths(paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]bool, len(paths))
+	ret := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		ret = append(ret, p)
+	}
+	return ret
+}
+
+func releaseDateFromNFOFiles(nfoFiles []string) (time.Time, bool) {
+	reader := NewNFOReader()
+	var latest time.Time
+	found := false
+
+	for _, nfoPath := range nfoFiles {
+		info, err := reader.ReadTVShowInfo(nfoPath)
+		if err != nil {
+			continue
+		}
+
+		candidates := []string{info.Aired, info.Premiered}
+		if info.Year > 0 {
+			candidates = append(candidates, fmt.Sprintf("%04d", info.Year))
+		}
+
+		for _, candidate := range candidates {
+			parsed, ok := parseNFODate(candidate)
+			if !ok {
+				continue
+			}
+			if !found || parsed.After(latest) {
+				latest = parsed
+				found = true
+			}
+		}
+	}
+
+	return latest, found
+}
+
+func parseNFODate(raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+
+	layouts := []string{
+		"2006-01-02",
+		"2006/01/02",
+		"2006.01.02",
+		"2006-01",
+		"2006",
+	}
+	for _, layout := range layouts {
+		parsed, err := time.Parse(layout, raw)
+		if err != nil {
+			continue
+		}
+		return parsed.UTC(), true
+	}
+	return time.Time{}, false
+}
+
 // isSubtitleFile checks if the file extension is a subtitle format
 func isSubtitleFile(ext string) bool {
 	return slices.Contains(subtitleExts, ext)
@@ -844,13 +939,15 @@ func (s *transService) startTime() (time.Time, error) {
 	s.mu.RUnlock()
 
 	if lastTriggerTime.IsZero() {
-		cronSchedule, err := icron.GetTriggerInfo(cronExpr, time.Now())
+		now := time.Now()
+		cronSchedule, err := icron.GetTriggerInfo(cronExpr, now)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("failed to get cron schedule: %w", err)
 		}
 
-		if time.Now().Add(-24 * 14 * time.Hour).Before(cronSchedule.Last) {
-			return time.Now().Add(-24 * 14 * time.Hour), nil
+		windowStart := now.Add(-24 * 14 * time.Hour)
+		if windowStart.After(cronSchedule.Last) {
+			return windowStart, nil
 		}
 		return cronSchedule.Last, nil
 	}

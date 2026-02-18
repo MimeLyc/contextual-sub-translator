@@ -17,6 +17,7 @@ import (
 func TestFindSourceBundlesInDir(t *testing.T) {
 	// Create temporary directory structure for testing
 	tempDir := t.TempDir()
+	recentAired := time.Now().Format("2006-01-02")
 
 	// Create test files
 	testFiles := map[string]string{
@@ -28,8 +29,8 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 		"episode01.vtt":    "",
 		"episode02.avi":    "",
 		"episode02.sub":    "",
-		"tvshow.nfo":       "",
-		"season.nfo":       "",
+		"tvshow.nfo":       "<tvshow><premiered>" + recentAired + "</premiered></tvshow>",
+		"season.nfo":       "<season><premiered>" + recentAired + "</premiered></season>",
 		"standalone.srt":   "",
 		"nosubtitle.mkv":   "",
 		"subtitleonly.ass": "",
@@ -113,15 +114,15 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 			name: "find bundles with time filter",
 			service: transService{
 				cfg:            config.Config{},
-				lastTrigerTime: time.Now().Add(-1 * time.Hour), // 1 hour ago
+				lastTrigerTime: time.Now().Add(-24 * 7 * time.Hour), // 7 days ago
 				cronExpr:       "",
 			},
 			dir:             tempDir,
 			expectedBundles: 7,
 			expectedError:   false,
 			validateBundles: func(t *testing.T, bundles []MediaPathBundle) {
-				// All files should be found since they were just created
-				assert.True(t, len(bundles) >= 4)
+				// All files should be found with recent aired date.
+				assert.Len(t, bundles, 7)
 			},
 		},
 		{
@@ -135,7 +136,6 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 			expectedBundles: 0,
 			expectedError:   false,
 			validateBundles: func(t *testing.T, bundles []MediaPathBundle) {
-				// No files should be found since they are older than filter time
 				assert.Empty(t, bundles)
 			},
 		},
@@ -195,6 +195,86 @@ func TestFindSourceBundlesInDir(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFindSourceBundlesInDir_FiltersByReleaseDate(t *testing.T) {
+	dir := t.TempDir()
+
+	// Old episode: should be filtered out by release date.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "old_ep.mkv"), []byte(""), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "old_ep.srt"), []byte(""), 0o644))
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(dir, "old_ep.nfo"),
+			[]byte("<episodedetails><aired>2025-09-20</aired></episodedetails>"),
+			0o644,
+		),
+	)
+
+	// New episode: should be included.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "new_ep.mkv"), []byte(""), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "new_ep.srt"), []byte(""), 0o644))
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(dir, "new_ep.nfo"),
+			[]byte("<episodedetails><aired>2025-10-10</aired></episodedetails>"),
+			0o644,
+		),
+	)
+
+	svc := transService{
+		lastTrigerTime: time.Date(2025, 10, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	bundles, err := svc.findSourceBundlesInDir(context.Background(), dir)
+	require.NoError(t, err)
+	require.Len(t, bundles, 1)
+	assert.Equal(t, filepath.Join(dir, "new_ep.mkv"), bundles[0].MediaFile)
+}
+
+func TestFindSourceBundlesInDir_StrictFiltersUnknownReleaseDate(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "ep01.mkv"), []byte(""), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "ep01.srt"), []byte(""), 0o644))
+	// Intentionally write invalid/empty NFO date fields.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tvshow.nfo"), []byte("<tvshow></tvshow>"), 0o644))
+
+	svc := transService{
+		lastTrigerTime: time.Now().Add(-30 * 24 * time.Hour),
+	}
+
+	bundles, err := svc.findSourceBundlesInDir(context.Background(), dir)
+	require.NoError(t, err)
+	assert.Empty(t, bundles)
+}
+
+func TestStartTime_UsesLaterOfWindowAndCronLast(t *testing.T) {
+	svc := transService{
+		cronExpr: "* * * * *",
+	}
+
+	before := time.Now()
+	start, err := svc.startTime()
+	require.NoError(t, err)
+
+	// For a minutely cron, cron last-run should be near now and definitely later than now-14d.
+	assert.True(t, start.After(before.Add(-1*time.Hour)), "start time should be near cron last trigger, got: %v", start)
+}
+
+func TestStartTime_FallsBackToFourteenDayWindowWhenCronLastTooOld(t *testing.T) {
+	svc := transService{
+		cronExpr: "0 0 1 1 *",
+	}
+
+	before := time.Now()
+	start, err := svc.startTime()
+	require.NoError(t, err)
+
+	expected := before.Add(-14 * 24 * time.Hour)
+	assert.WithinDuration(t, expected, start, 2*time.Minute)
 }
 
 func TestFindMatchingSubtitleFiles(t *testing.T) {
@@ -383,6 +463,8 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 	// Mock subtitle content for testing
 	mockSubtitleContent := "1\n00:00:01,000 --> 00:00:04,000\nHello world world\n\n2\n00:00:05,000 --> 00:00:08,000\nAnother subtitle line\n"
 	mockCNSubtitleContent := "1\n00:00:01,000 --> 00:00:04,000\n你好世界\n\n2\n00:00:05,000 --> 00:00:08,000\n另外一行\n"
+	releaseDate := time.Now().Format("2006-01-02")
+	tvshowNFO := "<tvshow><title>Test Show</title><premiered>" + releaseDate + "</premiered></tvshow>"
 
 	tests := []struct {
 		name            string
@@ -407,7 +489,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 
 				// Create NFO file
 				nfoPath := filepath.Join(rootDir, "tvshow.nfo")
-				err = os.WriteFile(nfoPath, []byte("<tvshow><title>Test Show</title></tvshow>"), 0644)
+				err = os.WriteFile(nfoPath, []byte(tvshowNFO), 0644)
 				require.NoError(t, err)
 			},
 			service: transService{
@@ -465,6 +547,11 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 				subPath := filepath.Join(rootDir, "test_movie.eng.srt")
 				err = os.WriteFile(subPath, []byte(mockSubtitleContent), 0644)
 				require.NoError(t, err)
+
+				// Create NFO file with release date
+				nfoPath := filepath.Join(rootDir, "tvshow.nfo")
+				err = os.WriteFile(nfoPath, []byte(tvshowNFO), 0644)
+				require.NoError(t, err)
 			},
 			service: transService{
 				cfg: config.Config{
@@ -491,7 +578,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 
 				// Create NFO file
 				nfoPath := filepath.Join(rootDir, "tvshow.nfo")
-				err = os.WriteFile(nfoPath, []byte("<tvshow><title>Test Show</title></tvshow>"), 0644)
+				err = os.WriteFile(nfoPath, []byte(tvshowNFO), 0644)
 				require.NoError(t, err)
 			},
 			service: transService{
@@ -532,7 +619,7 @@ func TestFindTargetMediaTuplesInDir(t *testing.T) {
 
 				// Create NFO file
 				nfoPath := filepath.Join(rootDir, "tvshow.nfo")
-				err = os.WriteFile(nfoPath, []byte("<tvshow><title>Multi Lang Show</title></tvshow>"), 0644)
+				err = os.WriteFile(nfoPath, []byte(tvshowNFO), 0644)
 				require.NoError(t, err)
 			},
 			service: transService{

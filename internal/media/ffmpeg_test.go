@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
@@ -18,6 +19,7 @@ func TestFFmpeg_ReadSubtitleDescription(t *testing.T) {
 	tests := []struct {
 		name        string
 		mockOutput  string
+		exitCode    int
 		expected    []subtitle.Description
 		expectError bool
 	}{
@@ -50,6 +52,7 @@ func TestFFmpeg_ReadSubtitleDescription(t *testing.T) {
 					}
 				]
 			}`,
+			exitCode: 0,
 			expected: []subtitle.Description{
 				{Language: "eng", SubLanguage: "English SDH"},
 				{Language: "jpn", SubLanguage: "Japanese Signs/Songs"},
@@ -76,6 +79,7 @@ func TestFFmpeg_ReadSubtitleDescription(t *testing.T) {
 					}
 				]
 			}`,
+			exitCode:    0,
 			expected:    []subtitle.Description{},
 			expectError: false,
 		},
@@ -92,6 +96,7 @@ func TestFFmpeg_ReadSubtitleDescription(t *testing.T) {
 					}
 				]
 			}`,
+			exitCode: 0,
 			expected: []subtitle.Description{
 				{Language: "und", SubLanguage: "Forced Subtitles"},
 			},
@@ -107,6 +112,7 @@ func TestFFmpeg_ReadSubtitleDescription(t *testing.T) {
 					}
 				]
 			}`,
+			exitCode: 0,
 			expected: []subtitle.Description{
 				{Language: "und", SubLanguage: ""},
 			},
@@ -115,6 +121,34 @@ func TestFFmpeg_ReadSubtitleDescription(t *testing.T) {
 		{
 			name:        "Invalid JSON",
 			mockOutput:  `{"streams": [invalid json`,
+			exitCode:    0,
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name: "Valid JSON with non-zero exit",
+			mockOutput: `{
+				"streams": [
+					{
+						"codec_type": "subtitle",
+						"codec_name": "srt",
+						"tags": {
+							"language": "eng",
+							"title": "English"
+						}
+					}
+				]
+			}`,
+			exitCode: 1,
+			expected: []subtitle.Description{
+				{Language: "eng", SubLanguage: "English"},
+			},
+			expectError: false,
+		},
+		{
+			name:        "Non-zero exit without streams should fail",
+			mockOutput:  `{}`,
+			exitCode:    1,
 			expected:    nil,
 			expectError: true,
 		},
@@ -132,10 +166,10 @@ func TestFFmpeg_ReadSubtitleDescription(t *testing.T) {
 			mockProbe := filepath.Join(mockDir, "ffprobe")
 			if runtime.GOOS == "windows" {
 				mockProbe += ".bat"
-				script := "@echo off\necho " + tt.mockOutput
+				script := "@echo off\necho " + tt.mockOutput + "\nexit /b " + strconv.Itoa(tt.exitCode)
 				err = os.WriteFile(mockProbe, []byte(script), 0755)
 			} else {
-				script := "#!/bin/sh\necho '" + tt.mockOutput + "'"
+				script := "#!/bin/sh\necho '" + tt.mockOutput + "'\nexit " + strconv.Itoa(tt.exitCode)
 				err = os.WriteFile(mockProbe, []byte(script), 0755)
 			}
 			assert.NoError(t, err)
@@ -257,8 +291,9 @@ func TestRealFFProbe(t *testing.T) {
 	}
 
 	// This is a basic test that ffprobe exists and can be called
-	// In real usage, you would want to test with actual video files
-	ff := NewFfmpeg("")
+	// In real usage, you would want to test with actual video files.
+	// Use a guaranteed missing file path to keep behavior deterministic.
+	ff := NewFfmpeg(filepath.Join(t.TempDir(), "missing-input.mkv"))
 	_, err := ff.ReadSubtitleDescription()
 	assert.Error(t, err) // Should fail with file not found
 

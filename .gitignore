@@ -53,3 +53,13 @@ logs/
 coverage.out
 coverage.html
 
+# Local build/cache artifacts
+.cache/
+web/node_modules/
+web/dist/
+test/
+.env*
+findings.md
+ctxtrans
+docker-compose.yml
+progress.md
