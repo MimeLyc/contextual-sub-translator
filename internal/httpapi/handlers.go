@@ -16,12 +16,12 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	lib, err := s.scanner.Scan(r.Context())
+	sources, err := s.scanner.ScanSources(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, lib.Sources)
+	writeJSON(w, http.StatusOK, sources)
 }
 
 func (s *Server) handleListItems(w http.ResponseWriter, r *http.Request) {
@@ -30,25 +30,33 @@ func (s *Server) handleListItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lib, err := s.scanner.Scan(r.Context())
+	sourceID := r.URL.Query().Get("source")
+	if sourceID != "" {
+		items, err := s.scanner.ScanItems(r.Context(), sourceID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+		return
+	}
+
+	// No source filter: iterate all sources
+	sources, err := s.scanner.ScanSources(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	sourceID := r.URL.Query().Get("source")
-	if sourceID == "" {
-		writeJSON(w, http.StatusOK, lib.Items)
-		return
-	}
-
-	ret := make([]library.Item, 0)
-	for _, item := range lib.Items {
-		if item.SourceID == sourceID {
-			ret = append(ret, item)
+	allItems := make([]library.Item, 0)
+	for _, src := range sources {
+		items, err := s.scanner.ScanItems(r.Context(), src.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
+		allItems = append(allItems, items...)
 	}
-	writeJSON(w, http.StatusOK, ret)
+	writeJSON(w, http.StatusOK, allItems)
 }
 
 func (s *Server) handleListEpisodesByItem(w http.ResponseWriter, r *http.Request) {
@@ -73,26 +81,24 @@ func (s *Server) handleListEpisodesByItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	lib, err := s.scanner.Scan(r.Context())
+	episodes, err := s.scanner.ScanEpisodesByItem(r.Context(), itemID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	activeJobsByMedia := inProgressJobsByMedia(s.queue.List())
-	ret := make([]episodeResponse, 0)
-	for _, episode := range lib.Episodes {
-		if episode.ItemID == itemID {
-			item := episodeResponse{
-				Episode: episode,
-			}
-			if job, ok := activeJobsByMedia[episode.MediaPath]; ok {
-				item.InProgress = true
-				item.JobStatus = job.Status
-				item.JobSource = job.Source
-			}
-			ret = append(ret, item)
+	ret := make([]episodeResponse, 0, len(episodes))
+	for _, episode := range episodes {
+		item := episodeResponse{
+			Episode: episode,
 		}
+		if job, ok := activeJobsByMedia[episode.MediaPath]; ok {
+			item.InProgress = true
+			item.JobStatus = job.Status
+			item.JobSource = job.Source
+		}
+		ret = append(ret, item)
 	}
 	writeJSON(w, http.StatusOK, episodesListResponse{
 		TargetLanguage: s.scanner.TargetLanguage(),
@@ -210,10 +216,6 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.scanner.Invalidate()
-	if _, err := s.scanner.Scan(r.Context()); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"ok": true,
 	})

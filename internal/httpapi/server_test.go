@@ -136,9 +136,9 @@ func TestServer_ListEpisodes_IncludesCronInProgress(t *testing.T) {
 		language.Chinese,
 	)
 
-	lib, err := scanner.Scan(context.Background())
+	items, err := scanner.ScanItems(context.Background(), "tvshows")
 	require.NoError(t, err)
-	require.Len(t, lib.Items, 1)
+	require.Len(t, items, 1)
 
 	queue := jobs.NewQueue(1)
 	job, created := queue.Enqueue(jobs.EnqueueRequest{
@@ -154,7 +154,7 @@ func TestServer_ListEpisodes_IncludesCronInProgress(t *testing.T) {
 	require.Equal(t, jobs.StatusPending, job.Status)
 
 	srv := NewServer(scanner, queue)
-	itemID := url.PathEscape(lib.Items[0].ID)
+	itemID := url.PathEscape(items[0].ID)
 	req := httptest.NewRequest(http.MethodGet, "/api/library/items/"+itemID+"/episodes", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)

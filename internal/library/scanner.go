@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
 )
 
@@ -18,6 +19,10 @@ type EmbeddedDetector func(mediaPath string) (hasEmbeddedSubtitle bool, hasEmbed
 type scannerOptions struct {
 	embeddedDetector EmbeddedDetector
 	cacheTTL         time.Duration
+	sourcesCacheTTL  time.Duration
+	itemsCacheTTL    time.Duration
+	episodesCacheTTL time.Duration
+	maxConcurrency   int
 }
 
 type Option func(*scannerOptions)
@@ -34,10 +39,52 @@ func WithCacheTTL(ttl time.Duration) Option {
 	}
 }
 
+func WithSourcesCacheTTL(ttl time.Duration) Option {
+	return func(o *scannerOptions) {
+		o.sourcesCacheTTL = ttl
+	}
+}
+
+func WithItemsCacheTTL(ttl time.Duration) Option {
+	return func(o *scannerOptions) {
+		o.itemsCacheTTL = ttl
+	}
+}
+
+func WithEpisodesCacheTTL(ttl time.Duration) Option {
+	return func(o *scannerOptions) {
+		o.episodesCacheTTL = ttl
+	}
+}
+
+func WithMaxConcurrency(n int) Option {
+	return func(o *scannerOptions) {
+		o.maxConcurrency = n
+	}
+}
+
 type scanCache struct {
 	version uint64
 	scanned time.Time
 	library *Library
+}
+
+type sourcesCache struct {
+	version uint64
+	scanned time.Time
+	sources []Source
+}
+
+type itemsCache struct {
+	version uint64
+	scanned time.Time
+	items   []Item
+}
+
+type episodesCache struct {
+	version uint64
+	scanned time.Time
+	episodes []Episode
 }
 
 type Scanner struct {
@@ -49,6 +96,15 @@ type Scanner struct {
 	cacheTTL      time.Duration
 	cache         *scanCache
 	configVersion uint64
+
+	// Tiered caches
+	srcCache        *sourcesCache
+	srcCacheTTL     time.Duration
+	itemsCaches     map[string]*itemsCache // keyed by sourceID
+	itemsCacheTTL   time.Duration
+	epCaches        map[string]*episodesCache // keyed by itemID
+	epCacheTTL      time.Duration
+	maxConcurrency  int
 }
 
 func NewScanner(
@@ -59,6 +115,10 @@ func NewScanner(
 	options := scannerOptions{
 		embeddedDetector: func(string) (bool, bool, []string) { return false, false, nil },
 		cacheTTL:         5 * time.Second,
+		sourcesCacheTTL:  60 * time.Second,
+		itemsCacheTTL:    30 * time.Second,
+		episodesCacheTTL: 10 * time.Second,
+		maxConcurrency:   8,
 	}
 	for _, opt := range opts {
 		opt(&options)
@@ -69,6 +129,12 @@ func NewScanner(
 		targetLanguage:   targetLanguage,
 		embeddedDetector: options.embeddedDetector,
 		cacheTTL:         options.cacheTTL,
+		srcCacheTTL:      options.sourcesCacheTTL,
+		itemsCacheTTL:    options.itemsCacheTTL,
+		itemsCaches:      make(map[string]*itemsCache),
+		epCacheTTL:       options.episodesCacheTTL,
+		epCaches:         make(map[string]*episodesCache),
+		maxConcurrency:   options.maxConcurrency,
 	}
 }
 
@@ -90,8 +156,7 @@ func (s *Scanner) UpdateTargetLanguage(lang string) error {
 	s.mu.Lock()
 	if s.targetLanguage != tag {
 		s.targetLanguage = tag
-		s.cache = nil
-		s.configVersion++
+		s.invalidateLocked()
 	}
 	s.mu.Unlock()
 	return nil
@@ -99,9 +164,16 @@ func (s *Scanner) UpdateTargetLanguage(lang string) error {
 
 func (s *Scanner) Invalidate() {
 	s.mu.Lock()
-	s.cache = nil
-	s.configVersion++
+	s.invalidateLocked()
 	s.mu.Unlock()
+}
+
+func (s *Scanner) invalidateLocked() {
+	s.cache = nil
+	s.srcCache = nil
+	s.itemsCaches = make(map[string]*itemsCache)
+	s.epCaches = make(map[string]*episodesCache)
+	s.configVersion++
 }
 
 // resolveSeriesPath walks from the media file's directory upward toward
@@ -300,6 +372,281 @@ func (s *Scanner) Scan(ctx context.Context) (*Library, error) {
 	s.mu.Unlock()
 
 	return ret, nil
+}
+
+// ScanSources returns the list of configured sources with item counts.
+// It only reads top-level directories (no ffprobe, no subtitle detection).
+// ItemCount reflects the number of non-hidden subdirectories, which may
+// include directories with no media files.
+func (s *Scanner) ScanSources(ctx context.Context) ([]Source, error) {
+	s.mu.RLock()
+	version := s.configVersion
+	ttl := s.srcCacheTTL
+	if s.srcCache != nil && s.srcCache.version == version && (ttl <= 0 || time.Since(s.srcCache.scanned) < ttl) {
+		result := make([]Source, len(s.srcCache.sources))
+		copy(result, s.srcCache.sources)
+		s.mu.RUnlock()
+		return result, nil
+	}
+	sources := append([]SourceConfig(nil), s.sources...)
+	s.mu.RUnlock()
+
+	ret := make([]Source, 0, len(sources))
+	for _, cfg := range sources {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		if cfg.Path == "" {
+			continue
+		}
+		entries, err := os.ReadDir(cfg.Path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		count := 0
+		for _, e := range entries {
+			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+				count++
+			}
+		}
+		ret = append(ret, Source{
+			ID:        cfg.ID,
+			Name:      cfg.Name,
+			Path:      cfg.Path,
+			ItemCount: count,
+		})
+	}
+
+	s.mu.Lock()
+	if s.configVersion == version {
+		cached := make([]Source, len(ret))
+		copy(cached, ret)
+		s.srcCache = &sourcesCache{
+			version: version,
+			scanned: time.Now(),
+			sources: cached,
+		}
+	}
+	s.mu.Unlock()
+
+	return ret, nil
+}
+
+// ScanItems returns the list of items (series/movies) for a given source,
+// with episode counts. It reads media files per directory but does NOT run
+// ffprobe or detect subtitles. Each top-level directory is treated as a
+// single item; tvshow.nfo-based series resolution is not performed at this tier.
+func (s *Scanner) ScanItems(ctx context.Context, sourceID string) ([]Item, error) {
+	s.mu.RLock()
+	version := s.configVersion
+	ttl := s.itemsCacheTTL
+	if cached, ok := s.itemsCaches[sourceID]; ok && cached.version == version && (ttl <= 0 || time.Since(cached.scanned) < ttl) {
+		result := make([]Item, len(cached.items))
+		copy(result, cached.items)
+		s.mu.RUnlock()
+		return result, nil
+	}
+	allSources := append([]SourceConfig(nil), s.sources...)
+	s.mu.RUnlock()
+
+	var sourceCfg *SourceConfig
+	for i := range allSources {
+		if allSources[i].ID == sourceID {
+			sourceCfg = &allSources[i]
+			break
+		}
+	}
+	if sourceCfg == nil || sourceCfg.Path == "" {
+		return nil, nil
+	}
+
+	entries, err := os.ReadDir(sourceCfg.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	ret := make([]Item, 0)
+	for _, e := range entries {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		dirPath := filepath.Join(sourceCfg.Path, e.Name())
+		mediaFiles, err := findMediaFiles(dirPath)
+		if err != nil {
+			return nil, err
+		}
+		if len(mediaFiles) == 0 {
+			continue
+		}
+		ret = append(ret, Item{
+			ID:           sourceID + "|" + dirPath,
+			SourceID:     sourceID,
+			Name:         e.Name(),
+			Path:         dirPath,
+			EpisodeCount: len(mediaFiles),
+		})
+	}
+
+	s.mu.Lock()
+	if s.configVersion == version {
+		cached := make([]Item, len(ret))
+		copy(cached, ret)
+		s.itemsCaches[sourceID] = &itemsCache{
+			version: version,
+			scanned: time.Now(),
+			items:   cached,
+		}
+	}
+	s.mu.Unlock()
+
+	return ret, nil
+}
+
+// ScanEpisodesByItem returns the full episode list for a single item,
+// including subtitle detection and parallel ffprobe.
+func (s *Scanner) ScanEpisodesByItem(ctx context.Context, itemID string) ([]Episode, error) {
+	s.mu.RLock()
+	version := s.configVersion
+	ttl := s.epCacheTTL
+	if cached, ok := s.epCaches[itemID]; ok && cached.version == version && (ttl <= 0 || time.Since(cached.scanned) < ttl) {
+		result := cloneEpisodes(cached.episodes)
+		s.mu.RUnlock()
+		return result, nil
+	}
+	targetLanguage := s.targetLanguage
+	embeddedDetector := s.embeddedDetector
+	maxConc := s.maxConcurrency
+	s.mu.RUnlock()
+
+	// Parse itemID: "sourceID|itemPath"
+	sepIdx := strings.Index(itemID, "|")
+	if sepIdx < 0 {
+		return nil, nil
+	}
+	sourceID := itemID[:sepIdx]
+	itemPath := itemID[sepIdx+1:]
+
+	if _, err := os.Stat(itemPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	mediaFiles, err := findMediaFiles(itemPath)
+	if err != nil {
+		return nil, err
+	}
+
+	episodes := make([]Episode, len(mediaFiles))
+	g, gctx := errgroup.WithContext(ctx)
+	if maxConc > 0 {
+		g.SetLimit(maxConc)
+	}
+
+	for i, mediaPath := range mediaFiles {
+		g.Go(func() error {
+			select {
+			case <-gctx.Done():
+				return gctx.Err()
+			default:
+			}
+
+			seriesPath := resolveSeriesPath(itemPath, mediaPath)
+			// If resolveSeriesPath returns a parent of itemPath, use itemPath
+			if seriesPath != itemPath && !strings.HasPrefix(itemPath, seriesPath) {
+				seriesPath = itemPath
+			}
+
+			baseName := strings.TrimSuffix(filepath.Base(mediaPath), filepath.Ext(mediaPath))
+			mediaDir := filepath.Dir(mediaPath)
+			sourceSubs, targetSubs, extLangs, err := findExternalSubtitles(mediaDir, baseName, targetLanguage)
+			if err != nil {
+				return err
+			}
+
+			hasEmbedded, hasEmbeddedTarget, embeddedLangs := embeddedDetector(mediaPath)
+			hasEmbeddedTarget = hasEmbeddedTarget || embeddedLanguagesContainTarget(embeddedLangs, targetLanguage)
+			hasSource := len(sourceSubs) > 0 || hasEmbedded
+			hasTarget := len(targetSubs) > 0 || hasEmbeddedTarget
+
+			languages := extLangs
+			seen := make(map[string]bool, len(extLangs))
+			for _, l := range extLangs {
+				seen[l] = true
+			}
+			for _, l := range embeddedLangs {
+				normalized := normalizeLangCode(l)
+				if normalized == "" {
+					continue
+				}
+				if !seen[normalized] {
+					seen[normalized] = true
+					languages = append(languages, normalized)
+				}
+			}
+
+			episodes[i] = Episode{
+				ID:        mediaPath,
+				SourceID:  sourceID,
+				ItemID:    itemID,
+				Name:      cleanEpisodeName(baseName),
+				Season:    resolveSeasonName(itemPath, mediaPath),
+				MediaPath: mediaPath,
+				Subtitles: SubtitleStatus{
+					HasSourceSubtitle:         hasSource,
+					HasTargetSubtitle:         hasTarget,
+					HasEmbeddedSubtitle:       hasEmbedded,
+					HasEmbeddedTargetSubtitle: hasEmbeddedTarget,
+					SourceSubtitleFiles:       sourceSubs,
+					TargetSubtitleFiles:       targetSubs,
+					Languages:                 languages,
+				},
+				Translatable: hasSource && !hasTarget,
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	if s.configVersion == version {
+		s.epCaches[itemID] = &episodesCache{
+			version:  version,
+			scanned:  time.Now(),
+			episodes: cloneEpisodes(episodes),
+		}
+	}
+	s.mu.Unlock()
+
+	return episodes, nil
+}
+
+func cloneEpisodes(src []Episode) []Episode {
+	dst := make([]Episode, len(src))
+	copy(dst, src)
+	for i := range dst {
+		dst[i].Subtitles.SourceSubtitleFiles = append([]string(nil), src[i].Subtitles.SourceSubtitleFiles...)
+		dst[i].Subtitles.TargetSubtitleFiles = append([]string(nil), src[i].Subtitles.TargetSubtitleFiles...)
+		dst[i].Subtitles.Languages = append([]string(nil), src[i].Subtitles.Languages...)
+	}
+	return dst
 }
 
 var subtitleExts = []string{
