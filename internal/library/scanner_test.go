@@ -332,6 +332,271 @@ func TestScanner_SubtitleMatchRequiresBoundaryAfterMediaBase(t *testing.T) {
 	assert.False(t, ep.Translatable)
 }
 
+func TestScanner_ScanSources(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "tvshows")
+	require.NoError(t, os.MkdirAll(filepath.Join(sourcePath, "Show1"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(sourcePath, "Show2"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(sourcePath, ".hidden"), 0o755))
+
+	scanner := NewScanner(
+		[]SourceConfig{
+			{ID: "tvshows", Name: "TV Shows", Path: sourcePath},
+		},
+		language.Chinese,
+	)
+
+	sources, err := scanner.ScanSources(context.Background())
+	require.NoError(t, err)
+	require.Len(t, sources, 1)
+	assert.Equal(t, "tvshows", sources[0].ID)
+	assert.Equal(t, "TV Shows", sources[0].Name)
+	assert.Equal(t, 2, sources[0].ItemCount) // hidden dir excluded
+}
+
+func TestScanner_ScanSources_MultipleSources(t *testing.T) {
+	tmp := t.TempDir()
+	src1 := filepath.Join(tmp, "tv")
+	src2 := filepath.Join(tmp, "movies")
+	require.NoError(t, os.MkdirAll(filepath.Join(src1, "Show"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(src2, "Movie"), 0o755))
+
+	scanner := NewScanner(
+		[]SourceConfig{
+			{ID: "tv", Name: "TV", Path: src1},
+			{ID: "movies", Name: "Movies", Path: src2},
+		},
+		language.Chinese,
+	)
+
+	sources, err := scanner.ScanSources(context.Background())
+	require.NoError(t, err)
+	require.Len(t, sources, 2)
+	assert.Equal(t, 1, sources[0].ItemCount)
+	assert.Equal(t, 1, sources[1].ItemCount)
+}
+
+func TestScanner_ScanSources_NonexistentPath(t *testing.T) {
+	scanner := NewScanner(
+		[]SourceConfig{
+			{ID: "missing", Name: "Missing", Path: "/nonexistent/path/xyz"},
+		},
+		language.Chinese,
+	)
+
+	sources, err := scanner.ScanSources(context.Background())
+	require.NoError(t, err)
+	require.Len(t, sources, 0)
+}
+
+func TestScanner_ScanItems(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "tvshows")
+	showDir := filepath.Join(sourcePath, "The Show")
+	require.NoError(t, os.MkdirAll(showDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(showDir, "ep01.mkv"), []byte("m"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(showDir, "ep02.mkv"), []byte("m"), 0o644))
+
+	// Empty dir should be skipped
+	emptyDir := filepath.Join(sourcePath, "EmptyShow")
+	require.NoError(t, os.MkdirAll(emptyDir, 0o755))
+
+	scanner := NewScanner(
+		[]SourceConfig{
+			{ID: "tvshows", Name: "TV Shows", Path: sourcePath},
+		},
+		language.Chinese,
+	)
+
+	items, err := scanner.ScanItems(context.Background(), "tvshows")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "The Show", items[0].Name)
+	assert.Equal(t, 2, items[0].EpisodeCount)
+	assert.Equal(t, "tvshows", items[0].SourceID)
+	assert.Equal(t, "tvshows|"+showDir, items[0].ID)
+}
+
+func TestScanner_ScanItems_UnknownSource(t *testing.T) {
+	scanner := NewScanner(
+		[]SourceConfig{
+			{ID: "tvshows", Name: "TV Shows", Path: "/tmp"},
+		},
+		language.Chinese,
+	)
+
+	items, err := scanner.ScanItems(context.Background(), "nonexistent")
+	require.NoError(t, err)
+	require.Nil(t, items)
+}
+
+func TestScanner_ScanEpisodesByItem(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "tvshows")
+	showDir := filepath.Join(sourcePath, "The Show")
+	seasonDir := filepath.Join(showDir, "Season 1")
+	require.NoError(t, os.MkdirAll(seasonDir, 0o755))
+
+	mediaPath := filepath.Join(seasonDir, "episode01.mkv")
+	srcSub := filepath.Join(seasonDir, "episode01.srt")
+	tgtSub := filepath.Join(seasonDir, "episode01.zh.srt")
+	require.NoError(t, os.WriteFile(mediaPath, []byte("media"), 0o644))
+	require.NoError(t, os.WriteFile(srcSub, []byte("source"), 0o644))
+	require.NoError(t, os.WriteFile(tgtSub, []byte("target"), 0o644))
+
+	scanner := NewScanner(
+		[]SourceConfig{
+			{ID: "tvshows", Name: "TV Shows", Path: sourcePath},
+		},
+		language.Chinese,
+		WithEmbeddedDetector(func(string) (bool, bool, []string) {
+			return false, false, nil
+		}),
+	)
+
+	itemID := "tvshows|" + showDir
+	episodes, err := scanner.ScanEpisodesByItem(context.Background(), itemID)
+	require.NoError(t, err)
+	require.Len(t, episodes, 1)
+
+	ep := episodes[0]
+	assert.Equal(t, mediaPath, ep.ID)
+	assert.Equal(t, "tvshows", ep.SourceID)
+	assert.Equal(t, itemID, ep.ItemID)
+	assert.Equal(t, "Season 1", ep.Season)
+	assert.True(t, ep.Subtitles.HasSourceSubtitle)
+	assert.True(t, ep.Subtitles.HasTargetSubtitle)
+	assert.False(t, ep.Translatable)
+}
+
+func TestScanner_ScanEpisodesByItem_InvalidID(t *testing.T) {
+	scanner := NewScanner(
+		[]SourceConfig{{ID: "tv", Name: "TV", Path: "/tmp"}},
+		language.Chinese,
+	)
+
+	episodes, err := scanner.ScanEpisodesByItem(context.Background(), "no-pipe-separator")
+	require.NoError(t, err)
+	require.Nil(t, episodes)
+}
+
+func TestScanner_ScanEpisodesByItem_ParallelDetector(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "tvshows")
+	showDir := filepath.Join(sourcePath, "The Show")
+	require.NoError(t, os.MkdirAll(showDir, 0o755))
+
+	for i := 0; i < 10; i++ {
+		name := filepath.Join(showDir, "ep"+string(rune('a'+i))+".mkv")
+		require.NoError(t, os.WriteFile(name, []byte("m"), 0o644))
+	}
+
+	var detectorCalls atomic.Int32
+	scanner := NewScanner(
+		[]SourceConfig{{ID: "tv", Name: "TV", Path: sourcePath}},
+		language.Chinese,
+		WithEmbeddedDetector(func(string) (bool, bool, []string) {
+			detectorCalls.Add(1)
+			time.Sleep(10 * time.Millisecond)
+			return true, false, []string{"eng"}
+		}),
+		WithMaxConcurrency(4),
+	)
+
+	itemID := "tv|" + showDir
+	episodes, err := scanner.ScanEpisodesByItem(context.Background(), itemID)
+	require.NoError(t, err)
+	require.Len(t, episodes, 10)
+	assert.Equal(t, int32(10), detectorCalls.Load())
+
+	// All episodes should have embedded detected
+	for _, ep := range episodes {
+		assert.True(t, ep.Subtitles.HasEmbeddedSubtitle)
+		assert.True(t, ep.Subtitles.HasSourceSubtitle)
+	}
+}
+
+func TestScanner_TieredCaches(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "tvshows")
+	showDir := filepath.Join(sourcePath, "Show")
+	require.NoError(t, os.MkdirAll(showDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(showDir, "ep01.mkv"), []byte("m"), 0o644))
+
+	var detectorCalls atomic.Int32
+	scanner := NewScanner(
+		[]SourceConfig{{ID: "tv", Name: "TV", Path: sourcePath}},
+		language.Chinese,
+		WithEmbeddedDetector(func(string) (bool, bool, []string) {
+			detectorCalls.Add(1)
+			return false, false, nil
+		}),
+		WithSourcesCacheTTL(10*time.Second),
+		WithItemsCacheTTL(10*time.Second),
+		WithEpisodesCacheTTL(10*time.Second),
+	)
+
+	// First calls populate caches
+	_, err := scanner.ScanSources(context.Background())
+	require.NoError(t, err)
+	_, err = scanner.ScanItems(context.Background(), "tv")
+	require.NoError(t, err)
+	_, err = scanner.ScanEpisodesByItem(context.Background(), "tv|"+showDir)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), detectorCalls.Load())
+
+	// Second calls should hit cache
+	_, err = scanner.ScanSources(context.Background())
+	require.NoError(t, err)
+	_, err = scanner.ScanItems(context.Background(), "tv")
+	require.NoError(t, err)
+	_, err = scanner.ScanEpisodesByItem(context.Background(), "tv|"+showDir)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), detectorCalls.Load()) // no new detector calls
+}
+
+func TestScanner_Invalidate_ClearsAllCaches(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "tvshows")
+	showDir := filepath.Join(sourcePath, "Show")
+	require.NoError(t, os.MkdirAll(showDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(showDir, "ep01.mkv"), []byte("m"), 0o644))
+
+	var detectorCalls atomic.Int32
+	scanner := NewScanner(
+		[]SourceConfig{{ID: "tv", Name: "TV", Path: sourcePath}},
+		language.Chinese,
+		WithEmbeddedDetector(func(string) (bool, bool, []string) {
+			detectorCalls.Add(1)
+			return false, false, nil
+		}),
+		WithSourcesCacheTTL(10*time.Second),
+		WithItemsCacheTTL(10*time.Second),
+		WithEpisodesCacheTTL(10*time.Second),
+	)
+
+	// Populate all caches
+	_, err := scanner.ScanSources(context.Background())
+	require.NoError(t, err)
+	_, err = scanner.ScanItems(context.Background(), "tv")
+	require.NoError(t, err)
+	_, err = scanner.ScanEpisodesByItem(context.Background(), "tv|"+showDir)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), detectorCalls.Load())
+
+	// Invalidate clears everything
+	scanner.Invalidate()
+
+	// Next calls should re-scan
+	_, err = scanner.ScanSources(context.Background())
+	require.NoError(t, err)
+	_, err = scanner.ScanItems(context.Background(), "tv")
+	require.NoError(t, err)
+	_, err = scanner.ScanEpisodesByItem(context.Background(), "tv|"+showDir)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), detectorCalls.Load())
+}
+
 func TestScanner_UpdateTargetLanguage_TakesEffectImmediately(t *testing.T) {
 	tmp := t.TempDir()
 	showDir := filepath.Join(tmp, "shows", "Anime")
