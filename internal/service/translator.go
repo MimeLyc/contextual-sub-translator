@@ -9,7 +9,6 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/MimeLyc/contextual-sub-translator/internal/translator"
-	"github.com/MimeLyc/contextual-sub-translator/pkg/file"
 	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
 	"golang.org/x/text/language"
 )
@@ -38,11 +37,12 @@ func (c TranslatorConfig) OutputPath() string {
 	if outputName == "" {
 		base := filepath.Base(c.InputPath)
 		ext := filepath.Ext(c.InputPath)
-		if strings.Contains(base, ".ctxtrans.") {
-			outputName = file.ReplaceExt(base, c.TargetLanguage.String()+ext)
-		} else {
-			outputName = file.ReplaceExt(base, ".ctxtrans."+c.TargetLanguage.String()+ext)
+		stem := strings.TrimSuffix(base, ext)
+		if idx := strings.Index(stem, "_ctxtrans"); idx >= 0 {
+			// Already a ctxtrans file — replace from the marker onward
+			stem = stem[:idx]
 		}
+		outputName = stem + "_ctxtrans." + c.TargetLanguage.String() + ext
 	}
 	return filepath.Join(outputDir, outputName)
 }
@@ -157,13 +157,12 @@ func (t *FileTranslator) Translate(
 		return nil, fmt.Errorf("failed to read subtitle file: %w", err)
 	}
 
-	t.config.SubtitleFile = subtitleFile
-	subTrans, err := NewTranslator(
-		t.config,
-		t.translator,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create translator: %w", err)
+	subTrans := &SubTranslator{
+		nfoReader:      t.nfoReader,
+		subtitleWriter: t.subtitleWriter,
+		translator:     t.translator,
+		config:         t.config,
+		file:           subtitleFile,
 	}
 	return subTrans.Translate(ctx, tvshowNFOPath)
 }

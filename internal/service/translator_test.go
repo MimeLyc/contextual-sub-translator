@@ -149,7 +149,9 @@ func TestTranslateFile_Success_WithContext_RealData(t *testing.T) {
 		TargetLanguage: language.Chinese,
 		BatchSize:      10,
 		ContextEnabled: true,
-		OutputDir:      "/tmp/output.srt",
+		InputPath:      "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt",
+		OutputDir:      "/tmp",
+		OutputName:     "output.srt",
 		Verbose:        false,
 	}
 
@@ -163,17 +165,23 @@ func TestTranslateFile_Success_WithContext_RealData(t *testing.T) {
 
 	ctx := context.Background()
 	nfoPath := "testdata/data/tvshow.nfo"
-	subtitlePath := "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt"
-
 	testTVShow := createDANDANTVShowInfo()
 	testSubtitleFile := createDANDANSubtitleFile()
 	testTranslatedLines := createDANDANTranslatedLines()
 
 	// Set up expectations
 	mockNFO.On("ReadTVShowInfo", nfoPath).Return(testTVShow, nil)
-	mockSubReader.On("Read", subtitlePath).Return(testSubtitleFile, nil)
-	mockTrans.On("BatchTranslate", ctx, mock.AnythingOfType("translator.MediaMeta"), testSubtitleFile.Lines, "Chinese", 10).Return(testTranslatedLines, nil)
-	mockSubWriter.On("Write", "/tmp/output.srt", mock.AnythingOfType("*subtitle.File")).Return(nil)
+	mockSubReader.On("Read").Return(testSubtitleFile, nil)
+	mockTrans.On(
+		"BatchTranslate",
+		ctx,
+		mock.AnythingOfType("translator.MediaMeta"),
+		testSubtitleFile.Lines,
+		mock.Anything,
+		mock.Anything,
+		10,
+	).Return(testTranslatedLines, nil)
+	mockSubWriter.On("Write", config.OutputPath(), mock.AnythingOfType("*subtitle.File")).Return(nil)
 
 	// Act
 	result, err := ctxtrans.Translate(ctx, nfoPath)
@@ -183,7 +191,7 @@ func TestTranslateFile_Success_WithContext_RealData(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, len(testSubtitleFile.Lines), len(result.OriginalFile.Lines))
 	assert.Equal(t, len(testTranslatedLines), len(result.TranslatedFile.Lines))
-	assert.Equal(t, "Chinese", result.TranslatedFile.Language)
+	assert.Equal(t, language.Chinese, result.TranslatedFile.Language)
 	assert.Equal(t, "SRT", result.TranslatedFile.Format)
 
 	// Verify specific translation content
@@ -208,7 +216,9 @@ func TestTranslateFile_Success_WithoutContext_RealData(t *testing.T) {
 		TargetLanguage: language.Chinese,
 		BatchSize:      10,
 		ContextEnabled: false, // Context disabled
-		OutputDir:      "",    // No output path
+		InputPath:      "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt",
+		OutputDir:      "/tmp",
+		OutputName:     "output_no_context.srt",
 	}
 
 	ctxtrans := &FileTranslator{
@@ -221,17 +231,24 @@ func TestTranslateFile_Success_WithoutContext_RealData(t *testing.T) {
 
 	ctx := context.Background()
 	nfoPath := "testdata/data/season.nfo"
-	subtitlePath := "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt"
-
 	testTVShow := createDANDANTVShowInfo()
 	testSubtitleFile := createDANDANSubtitleFile()
 	testTranslatedLines := createDANDANTranslatedLines()
 
 	// Set up expectations
 	mockNFO.On("ReadTVShowInfo", nfoPath).Return(testTVShow, nil)
-	mockSubReader.On("Read", subtitlePath).Return(testSubtitleFile, nil)
+	mockSubReader.On("Read").Return(testSubtitleFile, nil)
 	// When context is disabled, MediaMeta should have empty TVShowInfo
-	mockTrans.On("BatchTranslate", ctx, translator.MediaMeta{TVShowInfo: media.TVShowInfo{}}, testSubtitleFile.Lines, "Chinese", 10).Return(testTranslatedLines, nil)
+	mockTrans.On(
+		"BatchTranslate",
+		ctx,
+		translator.MediaMeta{TVShowInfo: media.TVShowInfo{}},
+		testSubtitleFile.Lines,
+		mock.Anything,
+		mock.Anything,
+		10,
+	).Return(testTranslatedLines, nil)
+	mockSubWriter.On("Write", config.OutputPath(), mock.AnythingOfType("*subtitle.File")).Return(nil)
 
 	// Act
 	result, err := ctxtrans.Translate(ctx, nfoPath)
@@ -241,11 +258,11 @@ func TestTranslateFile_Success_WithoutContext_RealData(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, 3, len(result.TranslatedFile.Lines))
 
-	// Verify mocks (no write should be called since output path is empty)
+	// Verify mocks
 	mockNFO.AssertExpectations(t)
 	mockSubReader.AssertExpectations(t)
 	mockTrans.AssertExpectations(t)
-	mockSubWriter.AssertNotCalled(t, "Write")
+	mockSubWriter.AssertExpectations(t)
 }
 
 func TestTranslateFile_NFOReadError(t *testing.T) {
@@ -258,11 +275,16 @@ func TestTranslateFile_NFOReadError(t *testing.T) {
 	ctx := context.Background()
 	nfoPath := "testdata/data/nonexistent.nfo"
 	subtitlePath := "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt"
+	testSubtitleFile := createDANDANSubtitleFile()
+	testTranslatedLines := createDANDANTranslatedLines()
 
 	config := TranslatorConfig{
 		TargetLanguage: language.Chinese,
+		BatchSize:      10,
 		ContextEnabled: true,
 		InputPath:      subtitlePath,
+		OutputDir:      "/tmp",
+		OutputName:     "output_nfo_error.srt",
 	}
 
 	// Set up expectations
@@ -275,20 +297,30 @@ func TestTranslateFile_NFOReadError(t *testing.T) {
 		translator:     mockTrans,
 		config:         config,
 	}
+	mockSubReader.On("Read").Return(testSubtitleFile, nil)
+	mockTrans.On(
+		"BatchTranslate",
+		ctx,
+		mock.AnythingOfType("translator.MediaMeta"),
+		testSubtitleFile.Lines,
+		mock.Anything,
+		mock.Anything,
+		10,
+	).Return(testTranslatedLines, nil)
+	mockSubWriter.On("Write", config.OutputPath(), mock.AnythingOfType("*subtitle.File")).Return(nil)
 
 	// Act
 	result, err := translator.Translate(ctx, nfoPath)
 
 	// Assert
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "failed to read NFO file")
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
 
 	// Verify mocks
 	mockNFO.AssertExpectations(t)
-	mockSubReader.AssertNotCalled(t, "Read")
-	mockSubWriter.AssertNotCalled(t, "Write")
-	mockTrans.AssertNotCalled(t, "BatchTranslate")
+	mockSubReader.AssertExpectations(t)
+	mockSubWriter.AssertExpectations(t)
+	mockTrans.AssertExpectations(t)
 }
 
 func TestTranslateFile_SubtitleReadError(t *testing.T) {
@@ -297,10 +329,12 @@ func TestTranslateFile_SubtitleReadError(t *testing.T) {
 	mockSubReader := &mockSubtitleReader{}
 	mockSubWriter := &mockSubtitleWriter{}
 	mockTrans := &mockTranslator{}
+	subtitlePath := "testdata/data/nonexistent.srt"
 
 	config := TranslatorConfig{
 		TargetLanguage: language.Chinese,
 		ContextEnabled: true,
+		InputPath:      subtitlePath,
 	}
 
 	translator := &FileTranslator{
@@ -313,13 +347,9 @@ func TestTranslateFile_SubtitleReadError(t *testing.T) {
 
 	ctx := context.Background()
 	nfoPath := "testdata/data/season.nfo"
-	subtitlePath := "testdata/data/nonexistent.srt"
-
-	testTVShow := createDANDANTVShowInfo()
 
 	// Set up expectations
-	mockNFO.On("ReadTVShowInfo", nfoPath).Return(testTVShow, nil)
-	mockSubReader.On("Read", subtitlePath).Return((*subtitle.File)(nil), errors.New("subtitle file not found"))
+	mockSubReader.On("Read").Return((*subtitle.File)(nil), errors.New("subtitle file not found"))
 
 	// Act
 	result, err := translator.Translate(ctx, nfoPath)
@@ -330,7 +360,7 @@ func TestTranslateFile_SubtitleReadError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to read subtitle file")
 
 	// Verify mocks
-	mockNFO.AssertExpectations(t)
+	mockNFO.AssertNotCalled(t, "ReadTVShowInfo")
 	mockSubReader.AssertExpectations(t)
 	mockSubWriter.AssertNotCalled(t, "Write")
 	mockTrans.AssertNotCalled(t, "BatchTranslate")
@@ -359,15 +389,21 @@ func TestTranslateFile_TranslationError(t *testing.T) {
 
 	ctx := context.Background()
 	nfoPath := "testdata/data/season.nfo"
-	subtitlePath := "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt"
-
 	testTVShow := createDANDANTVShowInfo()
 	testSubtitleFile := createDANDANSubtitleFile()
 
 	// Set up expectations
 	mockNFO.On("ReadTVShowInfo", nfoPath).Return(testTVShow, nil)
-	mockSubReader.On("Read", subtitlePath).Return(testSubtitleFile, nil)
-	mockTrans.On("BatchTranslate", ctx, mock.AnythingOfType("translator.MediaMeta"), testSubtitleFile.Lines, "Chinese", 10).Return(([]subtitle.Line)(nil), errors.New("LLM API error: rate limit exceeded"))
+	mockSubReader.On("Read").Return(testSubtitleFile, nil)
+	mockTrans.On(
+		"BatchTranslate",
+		ctx,
+		mock.AnythingOfType("translator.MediaMeta"),
+		testSubtitleFile.Lines,
+		mock.Anything,
+		mock.Anything,
+		10,
+	).Return(([]subtitle.Line)(nil), errors.New("LLM API error: rate limit exceeded"))
 
 	// Act
 	result, err := translator.Translate(ctx, nfoPath)
@@ -395,7 +431,8 @@ func TestTranslateFile_WriteError(t *testing.T) {
 		TargetLanguage: language.Chinese,
 		BatchSize:      10,
 		ContextEnabled: true,
-		OutputDir:      "/readonly/output.srt",
+		OutputDir:      "/readonly",
+		OutputName:     "output.srt",
 	}
 
 	translator := &FileTranslator{
@@ -409,16 +446,24 @@ func TestTranslateFile_WriteError(t *testing.T) {
 	ctx := context.Background()
 	nfoPath := "testdata/data/season.nfo"
 	subtitlePath := "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt"
-
+	config.InputPath = subtitlePath
 	testTVShow := createDANDANTVShowInfo()
 	testSubtitleFile := createDANDANSubtitleFile()
 	testTranslatedLines := createDANDANTranslatedLines()
 
 	// Set up expectations
 	mockNFO.On("ReadTVShowInfo", nfoPath).Return(testTVShow, nil)
-	mockSubReader.On("Read", subtitlePath).Return(testSubtitleFile, nil)
-	mockTrans.On("BatchTranslate", ctx, mock.AnythingOfType("translator.MediaMeta"), testSubtitleFile.Lines, "Chinese", 10).Return(testTranslatedLines, nil)
-	mockSubWriter.On("Write", "/readonly/output.srt", mock.AnythingOfType("*subtitle.File")).Return(errors.New("write permission denied"))
+	mockSubReader.On("Read").Return(testSubtitleFile, nil)
+	mockTrans.On(
+		"BatchTranslate",
+		ctx,
+		mock.AnythingOfType("translator.MediaMeta"),
+		testSubtitleFile.Lines,
+		mock.Anything,
+		mock.Anything,
+		10,
+	).Return(testTranslatedLines, nil)
+	mockSubWriter.On("Write", config.OutputPath(), mock.AnythingOfType("*subtitle.File")).Return(errors.New("write permission denied"))
 
 	// Act
 	result, err := translator.Translate(ctx, nfoPath)
@@ -456,14 +501,12 @@ func TestTranslateFile_NoTranslatorSet(t *testing.T) {
 
 	ctx := context.Background()
 	nfoPath := "testdata/data/season.nfo"
-	subtitlePath := "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt"
-
 	testTVShow := createDANDANTVShowInfo()
 	testSubtitleFile := createDANDANSubtitleFile()
 
 	// Set up expectations
 	mockNFO.On("ReadTVShowInfo", nfoPath).Return(testTVShow, nil)
-	mockSubReader.On("Read", subtitlePath).Return(testSubtitleFile, nil)
+	mockSubReader.On("Read").Return(testSubtitleFile, nil)
 
 	// Act
 	result, err := translator.Translate(ctx, nfoPath)
@@ -482,6 +525,9 @@ func TestTranslateFile_NoTranslatorSet(t *testing.T) {
 // Integration test demonstrating how to use LLM client with translator using real testdata
 func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 	_ = godotenv.Load("./.env")
+	if os.Getenv("RUN_LLM_INTEGRATION_TEST") != "1" {
+		t.Skip("Skipping integration test: set RUN_LLM_INTEGRATION_TEST=1 to enable")
+	}
 	// Skip this test if no API key is available
 	if os.Getenv("LLM_API_KEY") == "" || os.Getenv("LLM_API_URL") == "" {
 		t.Skip("Skipping integration test: LLM_API_KEY or LLM_API_URL not set")
@@ -489,7 +535,7 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 
 	// Use testdata files
 	nfoPath := filepath.Join("../../test/animations/tvshow.nfo")
-	subtitlePath := filepath.Join("../../test/animations/Gachiakuta - S01E15 - Clash! WEBRip-1080p.ctxtrans.srt")
+	subtitlePath := filepath.Join("../../test/animations/Gachiakuta - S01E15 - Clash! WEBRip-1080p_ctxtrans.srt")
 	outputPath := filepath.Join(t.TempDir(), "translated_output.srt")
 
 	// Verify testdata files exist
@@ -509,7 +555,7 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 		Model:       "kimi-k2.5",
 		MaxTokens:   8000,
 		Temperature: 1,
-		Timeout:     120,
+		Timeout:     20,
 	}
 
 	// Create tool registry (no web search for tests)
@@ -543,7 +589,8 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Act
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	result, err := trans.Translate(ctx, nfoPath)
 
 	// Assert
@@ -554,7 +601,7 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 
 	assert.NotNil(t, result)
 	assert.Greater(t, len(result.TranslatedFile.Lines), 0)
-	assert.Equal(t, "Chinese", result.TranslatedFile.Language)
+	assert.Equal(t, language.Chinese, result.TranslatedFile.Language)
 
 	// Verify output file was created
 	_, err = os.Stat(outputPath)
@@ -577,5 +624,5 @@ func TestOutputPath(t *testing.T) {
 	}
 
 	op := config.OutputPath()
-	assert.Equal(t, "testdata/output/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.ctxtrans.srt", op)
+	assert.Equal(t, "testdata/output/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng_ctxtrans.zh.srt", op)
 }

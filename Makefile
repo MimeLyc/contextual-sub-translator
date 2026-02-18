@@ -22,13 +22,19 @@ all: build
 .PHONY: build
 build:
 	@echo "Building ${BINARY_NAME}..."
-	@go build ${LDFLAGS} -o ${BINARY_NAME} ./cmd/ctxtrans
+	@go build ${LDFLAGS} -o ${BINARY_NAME} ./cmd
 
 # 安装到 $GOPATH/bin
 .PHONY: install
 install:
 	@echo "Installing ${BINARY_NAME}..."
-	@go install ${LDFLAGS} ./cmd/ctxtrans
+	@go install ${LDFLAGS} ./cmd
+
+# 运行应用
+.PHONY: run
+run: build
+	@echo "Running ${BINARY_NAME}..."
+	@UI_STATIC_DIR=$(CURDIR)/web/dist ./${BINARY_NAME}
 
 # 清理构建文件
 .PHONY: clean
@@ -96,6 +102,7 @@ example:
 help:
 	@echo "Available targets:"
 	@echo "  build        - Build the binary"
+	@echo "  run          - Build and run the application"
 	@echo "  install      - Install to \$$GOPATH/bin"
 	@echo "  test         - Run tests"
 	@echo "  test-coverage- Run tests with coverage"
