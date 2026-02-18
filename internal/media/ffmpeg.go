@@ -102,10 +102,10 @@ func (ff ffmpeg) ReadSubtitleDescription() (subtitle.Descriptions, error) {
 	}
 	cmd := exec.Command(cmdPath, ff.readProbeArgs(ff.filePath)...)
 
-	output, err := cmd.Output()
-	if err != nil {
-		log.Error("Failed to run ffprobe: %v", err)
-		return nil, err
+	output, cmdErr := cmd.Output()
+	if cmdErr != nil && strings.TrimSpace(string(output)) == "" {
+		log.Error("Failed to run ffprobe: %v", cmdErr)
+		return nil, cmdErr
 	}
 
 	var probeResult struct {
@@ -125,6 +125,13 @@ func (ff ffmpeg) ReadSubtitleDescription() (subtitle.Descriptions, error) {
 	if err := json.Unmarshal(output, &probeResult); err != nil {
 		log.Error("Failed to parse ffprobe output: %v", err)
 		return nil, err
+	}
+	if cmdErr != nil {
+		if probeResult.Streams == nil {
+			log.Error("Failed to run ffprobe: %v", cmdErr)
+			return nil, cmdErr
+		}
+		log.Warn("ffprobe exited with error, attempting to parse available output for %s: %v", ff.filePath, cmdErr)
 	}
 
 	descriptions := make([]subtitle.Description, 0)
