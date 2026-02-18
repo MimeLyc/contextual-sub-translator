@@ -85,10 +85,6 @@ func (t *agentTranslator) Translate(
 			SystemPrompt: systemPrompt,
 			UserMessage:  attemptMessage,
 		}
-		if attempt == 2 {
-			req.MaxIterations = 2
-		}
-
 		result, execErr := t.agent.Execute(ctx, req)
 		if execErr != nil {
 			lastErr = fmt.Errorf("agent execution failed: %w", execErr)
