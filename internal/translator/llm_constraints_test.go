@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,25 +34,56 @@ func TestBuildContextPrompt_NoTermMapUsesDynamicSearchCap(t *testing.T) {
 	assert.Contains(t, prompt, "at most 2 web_search calls")
 }
 
-func TestValidateInlineBreakers_Mismatch(t *testing.T) {
+func TestFixInlineBreakers_AlreadyCorrect(t *testing.T) {
 	t.Parallel()
 
-	err := validateInlineBreakers(
+	translated := []string{"第一%%inline_breaker%%第二"}
+	fixInlineBreakers(
 		[]string{"first%%inline_breaker%%second"},
-		[]string{"translated without marker"},
+		translated,
 	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "inline break")
+	assert.Equal(t, "第一%%inline_breaker%%第二", translated[0])
 }
 
-func TestValidateInlineBreakers_OK(t *testing.T) {
+func TestFixInlineBreakers_InsertMissing(t *testing.T) {
 	t.Parallel()
 
-	err := validateInlineBreakers(
+	translated := []string{"翻译后的完整文本"}
+	fixInlineBreakers(
 		[]string{"first%%inline_breaker%%second"},
-		[]string{"第一%%inline_breaker%%第二"},
+		translated,
 	)
-	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(translated[0], "%%inline_breaker%%"))
+}
+
+func TestFixInlineBreakers_RemoveExtra(t *testing.T) {
+	t.Parallel()
+
+	translated := []string{"第一%%inline_breaker%%第二%%inline_breaker%%第三"}
+	fixInlineBreakers(
+		[]string{"first and second"},
+		translated,
+	)
+	assert.Equal(t, 0, strings.Count(translated[0], "%%inline_breaker%%"))
+}
+
+func TestFixInlineBreakers_MultipleLines(t *testing.T) {
+	t.Parallel()
+
+	source := []string{
+		"a%%inline_breaker%%b",
+		"no breakers here",
+		"x%%inline_breaker%%y%%inline_breaker%%z",
+	}
+	translated := []string{
+		"甲乙",                                   // missing 1
+		"没有换行%%inline_breaker%%多了",          // extra 1
+		"一%%inline_breaker%%二%%inline_breaker%%三", // correct
+	}
+	fixInlineBreakers(source, translated)
+	assert.Equal(t, 1, strings.Count(translated[0], "%%inline_breaker%%"))
+	assert.Equal(t, 0, strings.Count(translated[1], "%%inline_breaker%%"))
+	assert.Equal(t, 2, strings.Count(translated[2], "%%inline_breaker%%"))
 }
 
 func TestValidateTermMappings_MissingMappedTarget(t *testing.T) {
