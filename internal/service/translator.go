@@ -128,13 +128,68 @@ func (t *SubTranslator) translateSubtitleLines(
 		return nil, nil
 	}
 
-	return t.translator.BatchTranslate(
-		ctx,
-		media,
-		lines,
-		t.file.Language.String(),
-		t.config.TargetLanguage.String(),
-		t.config.BatchSize)
+	checkpointStore := batchCheckpointStoreFromContext(ctx)
+	if checkpointStore == nil {
+		return t.translator.BatchTranslate(
+			ctx,
+			media,
+			lines,
+			t.file.Language.String(),
+			t.config.TargetLanguage.String(),
+			t.config.BatchSize)
+	}
+
+	batchSize := t.config.BatchSize
+	if batchSize <= 0 {
+		batchSize = 50
+	}
+
+	result := make([]subtitle.Line, len(lines))
+	for i, line := range lines {
+		result[i] = subtitle.Line{
+			Index:     line.Index,
+			StartTime: line.StartTime,
+			EndTime:   line.EndTime,
+			Text:      line.Text,
+		}
+	}
+
+	for start := 0; start < len(lines); start += batchSize {
+		end := min(start+batchSize, len(lines))
+		if cached, ok := checkpointStore.Load(start, end); ok && len(cached) == (end-start) {
+			for i := start; i < end; i++ {
+				result[i].TranslatedText = cached[i-start]
+			}
+			continue
+		}
+
+		batchLines := make([]subtitle.Line, end-start)
+		copy(batchLines, lines[start:end])
+		translated, err := t.translator.BatchTranslate(
+			ctx,
+			media,
+			batchLines,
+			t.file.Language.String(),
+			t.config.TargetLanguage.String(),
+			end-start,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("batch translation failed for lines %d-%d: %w", start+1, end, err)
+		}
+		if len(translated) != (end - start) {
+			return nil, fmt.Errorf("translation count mismatch for lines %d-%d: expected %d, got %d", start+1, end, end-start, len(translated))
+		}
+		translatedTexts := make([]string, 0, len(translated))
+		for i := start; i < end; i++ {
+			result[i] = translated[i-start]
+			translatedTexts = append(translatedTexts, translated[i-start].TranslatedText)
+		}
+		if err := checkpointStore.Save(ctx, start, end, translatedTexts); err != nil {
+			return nil, fmt.Errorf("failed to save translation checkpoint for lines %d-%d: %w", start+1, end, err)
+		}
+	}
+
+	return result, nil
 }
 
 // FileTranslator is the core structure for subtitle translator

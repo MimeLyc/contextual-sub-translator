@@ -16,6 +16,7 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/jobs"
 	"github.com/MimeLyc/contextual-sub-translator/internal/library"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
+	"github.com/MimeLyc/contextual-sub-translator/internal/persistence"
 	"github.com/MimeLyc/contextual-sub-translator/internal/service"
 	"github.com/robfig/cron/v3"
 )
@@ -58,9 +59,19 @@ func main() {
 	ctx, cancel := signalContext(context.Background())
 	defer cancel()
 
+	store, err := persistence.NewSQLiteStore(cfg.DBPath())
+	if err != nil {
+		log.Fatal("Failed to initialize sqlite store:", err)
+	}
+	defer func() {
+		if closeErr := store.Close(); closeErr != nil {
+			log.Printf("warning: failed to close sqlite store: %v", closeErr)
+		}
+	}()
+
 	cronScheduler := cron.New()
-	jobQueue := jobs.NewQueue(max(1, cfg.Agent.BundleConcurrency))
-	cronSvc := service.NewRunnableTransServiceWithQueue(*cfg, cronScheduler, jobQueue)
+	jobQueue := jobs.NewQueue(max(1, cfg.Agent.BundleConcurrency), store)
+	cronSvc := service.NewRunnableTransServiceWithQueueAndStore(*cfg, cronScheduler, jobQueue, store)
 
 	sourceConfigs := []library.SourceConfig{
 		{ID: "movies", Name: "Movies", Path: cfg.Media.MovieDir},

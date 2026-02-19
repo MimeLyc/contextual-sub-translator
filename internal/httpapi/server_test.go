@@ -48,7 +48,7 @@ func TestServer_ListSources(t *testing.T) {
 		language.Chinese,
 	)
 
-	queue := jobs.NewQueue(1)
+	queue := jobs.NewQueue(1, nil)
 	srv := NewServer(scanner, queue)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/sources", nil)
@@ -75,7 +75,7 @@ func TestServer_CreateJob_WithPayload(t *testing.T) {
 		language.Chinese,
 	)
 
-	queue := jobs.NewQueue(1)
+	queue := jobs.NewQueue(1, nil)
 	srv := NewServer(scanner, queue)
 
 	body := []byte(`{"source":"manual","dedupe_key":"m|s|zh","media_path":"/tmp/a.mkv","subtitle_path":"/tmp/a.srt","nfo_path":"/tmp/tvshow.nfo"}`)
@@ -109,7 +109,7 @@ func TestServer_CreateJob_RequiresMediaPath(t *testing.T) {
 		language.Chinese,
 	)
 
-	queue := jobs.NewQueue(1)
+	queue := jobs.NewQueue(1, nil)
 	srv := NewServer(scanner, queue)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/jobs", bytes.NewReader([]byte(`{"source":"manual"}`)))
@@ -140,7 +140,7 @@ func TestServer_ListEpisodes_IncludesCronInProgress(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 
-	queue := jobs.NewQueue(1)
+	queue := jobs.NewQueue(1, nil)
 	job, created := queue.Enqueue(jobs.EnqueueRequest{
 		Source:    "cron",
 		DedupeKey: mediaPath + "|" + subtitlePath + "|zh",
@@ -199,7 +199,7 @@ func TestServer_GetSettings(t *testing.T) {
 			TargetLanguage: "zh",
 		},
 	}
-	srv := NewServer(scanner, jobs.NewQueue(1), WithRuntimeSettingsStore(store))
+	srv := NewServer(scanner, jobs.NewQueue(1, nil), WithRuntimeSettingsStore(store))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
 	rec := httptest.NewRecorder()
@@ -232,7 +232,7 @@ func TestServer_UpdateSettings(t *testing.T) {
 			TargetLanguage: "zh",
 		},
 	}
-	srv := NewServer(scanner, jobs.NewQueue(1), WithRuntimeSettingsStore(store))
+	srv := NewServer(scanner, jobs.NewQueue(1, nil), WithRuntimeSettingsStore(store))
 
 	body := []byte(`{"llm_api_url":"https://new.example/v1","llm_api_key":"new-ak","llm_model":"new-model","cron_expr":"*/10 * * * *","target_language":"en"}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewReader(body))
@@ -272,7 +272,7 @@ func TestServer_UpdateSettings_StoreFailure(t *testing.T) {
 		},
 		updateErr: errors.New("save failed"),
 	}
-	srv := NewServer(scanner, jobs.NewQueue(1), WithRuntimeSettingsStore(store))
+	srv := NewServer(scanner, jobs.NewQueue(1, nil), WithRuntimeSettingsStore(store))
 
 	body := []byte(`{"llm_api_url":"https://new.example/v1","llm_api_key":"new-ak","llm_model":"new-model","cron_expr":"*/10 * * * *","target_language":"en"}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewReader(body))
@@ -308,7 +308,7 @@ func TestServer_UpdateSettings_AppliesRuntimeSettingsImmediately(t *testing.T) {
 	var applyCalls int
 	srv := NewServer(
 		scanner,
-		jobs.NewQueue(1),
+		jobs.NewQueue(1, nil),
 		WithRuntimeSettingsStore(store),
 		WithRuntimeSettingsApplier(func(next config.RuntimeSettings) error {
 			applied = next

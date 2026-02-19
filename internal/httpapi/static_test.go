@@ -27,7 +27,7 @@ func TestServer_ServesSPAFromStaticDir(t *testing.T) {
 		[]library.SourceConfig{{ID: "tvshows", Name: "TV Shows", Path: sourcePath}},
 		language.Chinese,
 	)
-	server := NewServer(scanner, jobs.NewQueue(1), WithUI(staticDir, true))
+	server := NewServer(scanner, jobs.NewQueue(1, nil), WithUI(staticDir, true))
 
 	for _, url := range []string{"/", "/series/abc"} {
 		req := httptest.NewRequest(http.MethodGet, url, nil)

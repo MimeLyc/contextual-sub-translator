@@ -10,7 +10,7 @@ import (
 )
 
 func TestQueue_Enqueue_DeduplicatesSameKey(t *testing.T) {
-	q := NewQueue(2)
+	q := NewQueue(2, nil)
 
 	jobA, createdA := q.Enqueue(EnqueueRequest{
 		Source:    "manual",
@@ -29,7 +29,7 @@ func TestQueue_Enqueue_DeduplicatesSameKey(t *testing.T) {
 }
 
 func TestQueue_Enqueue_AllowsRetryAfterFailure(t *testing.T) {
-	q := NewQueue(1)
+	q := NewQueue(1, nil)
 
 	var attempts int
 	q.Start(func(_ context.Context, _ *TranslationJob) error {
@@ -68,7 +68,7 @@ func TestQueue_Enqueue_AllowsRetryAfterFailure(t *testing.T) {
 }
 
 func TestQueue_Enqueue_AllowsRetryAfterSuccess(t *testing.T) {
-	q := NewQueue(1)
+	q := NewQueue(1, nil)
 	q.Start(func(_ context.Context, _ *TranslationJob) error { return nil })
 	defer q.Stop()
 

@@ -11,7 +11,7 @@ import (
 )
 
 func TestManualAndCron_UseSameEnqueueDedup(t *testing.T) {
-	q := jobs.NewQueue(1)
+	q := jobs.NewQueue(1, nil)
 	svc := transService{
 		cfg: config.Config{
 			Translate: config.TranslateConfig{
