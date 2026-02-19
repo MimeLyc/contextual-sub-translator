@@ -74,6 +74,7 @@ func (t *agentTranslator) Translate(
 	maxAttempts := 2
 	var lastErr error
 	var previousOutput string
+	var bestTranslations []string
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		attemptMessage := userMessage
@@ -110,22 +111,43 @@ func (t *agentTranslator) Translate(
 
 		translations, parseErr := parseTranslationOutput(result.Content, len(subtitleTexts))
 		if parseErr == nil {
-			parseErr = validateInlineBreakers(subtitleTexts, translations)
+			fixInlineBreakers(subtitleTexts, translations)
 		}
-		if parseErr == nil {
-			parseErr = validateTermMappings(subtitleTexts, translations, media.TermMap)
+
+		// Hard validation failed (structural: line count, JSON parse).
+		// These make the output unusable — retry.
+		if parseErr != nil {
+			lastErr = parseErr
+			if attempt < maxAttempts {
+				log.Warn("Translation output failed validation on attempt %d/%d: %v; retrying with repair prompt", attempt, maxAttempts, parseErr)
+				continue
+			}
+			return nil, fmt.Errorf("translation validation failed after repair retry: %w", lastErr)
 		}
-		if parseErr == nil {
+
+		// Soft validation (term mapping): quality check, not structural.
+		// Try repair once, but accept the best result if repair also fails.
+		termErr := validateTermMappings(subtitleTexts, translations, media.TermMap)
+		if termErr == nil {
 			return normalizeTranslatedLines(translations), nil
 		}
-
-		lastErr = parseErr
 		if attempt < maxAttempts {
-			log.Warn("Translation output failed validation on attempt %d/%d: %v; retrying with repair prompt", attempt, maxAttempts, parseErr)
+			lastErr = termErr
+			bestTranslations = translations
+			log.Warn("Translation output has term mapping issues on attempt %d/%d: %v; retrying with repair prompt", attempt, maxAttempts, termErr)
 			continue
 		}
+		// Repair also didn't fix term mapping — accept with warning.
+		log.Warn("Accepting translation despite term mapping issues: %v", termErr)
+		return normalizeTranslatedLines(translations), nil
 	}
 
+	// Should only reach here if all attempts had hard failures.
+	// If we have a structurally valid result from a previous attempt, use it.
+	if bestTranslations != nil {
+		log.Warn("Returning best-effort translation despite term mapping issues")
+		return normalizeTranslatedLines(bestTranslations), nil
+	}
 	return nil, fmt.Errorf("translation validation failed after repair retry: %w", lastErr)
 }
 
@@ -445,20 +467,78 @@ func validateExpectedLineCount(lines []string, expectedCount int) error {
 	return nil
 }
 
-func validateInlineBreakers(sourceLines []string, translatedLines []string) error {
-	if len(sourceLines) != len(translatedLines) {
-		return fmt.Errorf("line count mismatch before inline breaker validation: expected %d, got %d", len(sourceLines), len(translatedLines))
-	}
-
+// fixInlineBreakers reconciles the inline breaker count between source and
+// translated lines. When the LLM drops or adds breakers, this function repairs
+// the translated line instead of failing the entire batch.
+//   - Missing breakers: inserted at the midpoint of the translated text.
+//   - Extra breakers:   surplus ones are removed from the end.
+func fixInlineBreakers(sourceLines []string, translatedLines []string) {
 	for i := range sourceLines {
 		expected := strings.Count(sourceLines[i], inlineBreakerPlaceholder)
 		actual := strings.Count(translatedLines[i], inlineBreakerPlaceholder)
-		if expected != actual {
-			return fmt.Errorf("inline breaker count mismatch at line %d: expected %d, got %d", i+1, expected, actual)
+		if expected == actual {
+			continue
+		}
+		if actual < expected {
+			// Insert missing breakers at midpoint of the text.
+			translatedLines[i] = insertBreakers(translatedLines[i], expected-actual)
+			log.Debug("Inserted %d missing inline breaker(s) at line %d", expected-actual, i+1)
+		} else {
+			// Remove surplus breakers from the end.
+			translatedLines[i] = removeBreakers(translatedLines[i], actual-expected)
+			log.Debug("Removed %d extra inline breaker(s) at line %d", actual-expected, i+1)
 		}
 	}
+}
 
-	return nil
+// insertBreakers adds n inline breaker placeholders into text. It tries to
+// split the text into n+1 roughly equal segments separated by breakers.
+func insertBreakers(text string, n int) string {
+	// Strip any existing breakers to get clean text, then re-split.
+	clean := strings.ReplaceAll(text, inlineBreakerPlaceholder, "")
+	if clean == "" {
+		parts := make([]string, n+1)
+		for i := range parts {
+			parts[i] = ""
+		}
+		return strings.Join(parts, inlineBreakerPlaceholder)
+	}
+
+	runes := []rune(clean)
+	segLen := len(runes) / (n + 1)
+	if segLen < 1 {
+		segLen = 1
+	}
+
+	var b strings.Builder
+	inserted := 0
+	for j, r := range runes {
+		b.WriteRune(r)
+		if inserted < n && (j+1)%segLen == 0 && j+1 < len(runes) {
+			b.WriteString(inlineBreakerPlaceholder)
+			inserted++
+		}
+	}
+	// If we still haven't inserted enough (very short text), append the rest.
+	for inserted < n {
+		b.WriteString(inlineBreakerPlaceholder)
+		inserted++
+	}
+	return b.String()
+}
+
+// removeBreakers removes n inline breaker placeholders from text,
+// starting from the last occurrence.
+func removeBreakers(text string, n int) string {
+	for n > 0 {
+		idx := strings.LastIndex(text, inlineBreakerPlaceholder)
+		if idx < 0 {
+			break
+		}
+		text = text[:idx] + text[idx+len(inlineBreakerPlaceholder):]
+		n--
+	}
+	return text
 }
 
 func validateTermMappings(sourceLines []string, translatedLines []string, termMap map[string]string) error {
