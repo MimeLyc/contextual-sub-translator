@@ -9,7 +9,7 @@ import (
 )
 
 func TestQueue_Worker_TransitionsStatus(t *testing.T) {
-	q := NewQueue(1)
+	q := NewQueue(1, nil)
 	q.Start(func(_ context.Context, _ *TranslationJob) error { return nil })
 	defer q.Stop()
 

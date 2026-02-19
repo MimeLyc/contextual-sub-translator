@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
 )
 
 type Executor func(ctx context.Context, job *TranslationJob) error
@@ -14,6 +18,7 @@ type Executor func(ctx context.Context, job *TranslationJob) error
 type Queue struct {
 	workerCount int
 	maxJobs     int
+	store       Store
 
 	mu         sync.RWMutex
 	jobs       map[string]*TranslationJob
@@ -26,18 +31,21 @@ type Queue struct {
 	wg         sync.WaitGroup
 }
 
-func NewQueue(workerCount int) *Queue {
+func NewQueue(workerCount int, store Store) *Queue {
 	if workerCount <= 0 {
 		workerCount = 1
 	}
-	return &Queue{
+	q := &Queue{
 		workerCount: workerCount,
 		maxJobs:     1000,
+		store:       store,
 		jobs:        make(map[string]*TranslationJob),
 		dedupe:      make(map[string]string),
 		pendingIDs:  make(chan string, 1024),
 		stopCh:      make(chan struct{}),
 	}
+	q.hydrateFromStore(context.Background())
+	return q
 }
 
 func (q *Queue) Enqueue(req EnqueueRequest) (*TranslationJob, bool) {
@@ -65,11 +73,14 @@ func (q *Queue) Enqueue(req EnqueueRequest) (*TranslationJob, bool) {
 	}
 
 	q.jobs[id] = job
-	q.dedupe[req.DedupeKey] = id
+	if req.DedupeKey != "" {
+		q.dedupe[req.DedupeKey] = id
+	}
 	started := q.started
 	snapshot := cloneJob(job)
 	q.mu.Unlock()
 
+	q.persistJob(snapshot)
 	if started {
 		q.enqueuePendingID(id)
 	}
@@ -163,38 +174,44 @@ func (q *Queue) enqueuePendingID(id string) {
 
 func (q *Queue) markRunning(id string) (*TranslationJob, bool) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	job, ok := q.jobs[id]
 	if !ok || job.Status != StatusPending {
+		q.mu.Unlock()
 		return nil, false
 	}
 	job.Status = StatusRunning
 	job.UpdatedAt = time.Now()
-	return cloneJob(job), true
+	snapshot := cloneJob(job)
+	q.mu.Unlock()
+
+	q.persistJob(snapshot)
+	return snapshot, true
 }
 
 func (q *Queue) markSuccess(id string) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	job, ok := q.jobs[id]
 	if !ok {
+		q.mu.Unlock()
 		return
 	}
 	job.Status = StatusSuccess
 	job.Error = ""
 	job.UpdatedAt = time.Now()
 	q.releaseDedupeLocked(job)
-	q.pruneTerminalJobsLocked()
+	pruned := q.pruneTerminalJobsLocked()
+	snapshot := cloneJob(job)
+	q.mu.Unlock()
+
+	q.persistJob(snapshot)
+	q.deleteJobsFromStore(pruned)
 }
 
 func (q *Queue) markFailed(id string, err error) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	job, ok := q.jobs[id]
 	if !ok {
+		q.mu.Unlock()
 		return
 	}
 	job.Status = StatusFailed
@@ -203,7 +220,12 @@ func (q *Queue) markFailed(id string, err error) {
 	}
 	job.UpdatedAt = time.Now()
 	q.releaseDedupeLocked(job)
-	q.pruneTerminalJobsLocked()
+	pruned := q.pruneTerminalJobsLocked()
+	snapshot := cloneJob(job)
+	q.mu.Unlock()
+
+	q.persistJob(snapshot)
+	q.deleteJobsFromStore(pruned)
 }
 
 func (q *Queue) releaseDedupeLocked(job *TranslationJob) {
@@ -215,9 +237,9 @@ func (q *Queue) releaseDedupeLocked(job *TranslationJob) {
 	}
 }
 
-func (q *Queue) pruneTerminalJobsLocked() {
+func (q *Queue) pruneTerminalJobsLocked() []string {
 	if q.maxJobs <= 0 || len(q.jobs) <= q.maxJobs {
-		return
+		return nil
 	}
 
 	type candidate struct {
@@ -235,7 +257,7 @@ func (q *Queue) pruneTerminalJobsLocked() {
 		terminal = append(terminal, candidate{id: id, updatedAt: job.UpdatedAt})
 	}
 	if len(terminal) == 0 {
-		return
+		return nil
 	}
 
 	sort.Slice(terminal, func(i, j int) bool {
@@ -244,12 +266,13 @@ func (q *Queue) pruneTerminalJobsLocked() {
 
 	toRemove := len(q.jobs) - q.maxJobs
 	if toRemove <= 0 {
-		return
+		return nil
 	}
 	if toRemove > len(terminal) {
 		toRemove = len(terminal)
 	}
 
+	pruned := make([]string, 0, toRemove)
 	for i := 0; i < toRemove; i++ {
 		id := terminal[i].id
 		job := q.jobs[id]
@@ -257,6 +280,80 @@ func (q *Queue) pruneTerminalJobsLocked() {
 			q.releaseDedupeLocked(job)
 		}
 		delete(q.jobs, id)
+		pruned = append(pruned, id)
+	}
+	return pruned
+}
+
+func (q *Queue) deleteJobsFromStore(ids []string) {
+	if q.store == nil || len(ids) == 0 {
+		return
+	}
+	for _, id := range ids {
+		if err := q.store.DeleteJobData(context.Background(), id); err != nil {
+			log.Error("Failed to delete data for pruned job %s: %v", id, err)
+		}
+		if err := q.store.DeleteJob(context.Background(), id); err != nil {
+			log.Error("Failed to delete pruned job %s from store: %v", id, err)
+		}
+	}
+}
+
+func (q *Queue) hydrateFromStore(ctx context.Context) {
+	if q.store == nil {
+		return
+	}
+	loaded, err := q.store.LoadJobs(ctx)
+	if err != nil {
+		log.Error("Failed to load jobs from store: %v", err)
+		return
+	}
+
+	now := time.Now()
+	toPersist := make([]*TranslationJob, 0)
+	q.mu.Lock()
+	for _, raw := range loaded {
+		if raw == nil || raw.ID == "" {
+			continue
+		}
+		job := cloneJob(raw)
+		if job.Status == StatusRunning {
+			job.Status = StatusPending
+			job.UpdatedAt = now
+			toPersist = append(toPersist, cloneJob(job))
+		}
+		q.jobs[job.ID] = job
+		if (job.Status == StatusPending || job.Status == StatusRunning) && job.DedupeKey != "" {
+			q.dedupe[job.DedupeKey] = job.ID
+		}
+		q.updateIDCounterLocked(job.ID)
+	}
+	q.mu.Unlock()
+
+	for _, job := range toPersist {
+		q.persistJob(job)
+	}
+}
+
+func (q *Queue) updateIDCounterLocked(jobID string) {
+	if !strings.HasPrefix(jobID, "job-") {
+		return
+	}
+	n, err := strconv.ParseUint(strings.TrimPrefix(jobID, "job-"), 10, 64)
+	if err != nil {
+		return
+	}
+	if n > q.idCounter {
+		q.idCounter = n
+	}
+}
+
+func (q *Queue) persistJob(job *TranslationJob) {
+	if q.store == nil || job == nil {
+		return
+	}
+	if err := q.store.UpsertJob(context.Background(), job); err != nil {
+		log.Error("Failed to persist job %s: %v", job.ID, err)
 	}
 }
 

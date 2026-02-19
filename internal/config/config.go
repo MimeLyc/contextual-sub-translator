@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/MimeLyc/contextual-sub-translator/pkg/log"
@@ -136,10 +137,11 @@ func (c MediaConfig) MediaPaths() []string {
 
 // SystemConfig holds the system configuration
 type SystemConfig struct {
-	PUID int    `json:"puid"`
-	PGID int    `json:"pgid"`
-	TZ   string `json:"tz"`
-	Zone string `json:"zone"`
+	PUID    int    `json:"puid"`
+	PGID    int    `json:"pgid"`
+	TZ      string `json:"tz"`
+	Zone    string `json:"zone"`
+	DataDir string `json:"data_dir"`
 }
 
 // Option is a function type for configuring Config
@@ -166,10 +168,11 @@ func NewFromEnv(opts ...Option) (*Config, error) {
 			DocumentaryDir: getEnvString("DOCUMENTARY_DIR", "/documentaries"),
 		},
 		System: SystemConfig{
-			PUID: getEnvInt("PUID", 1000),
-			PGID: getEnvInt("PGID", 1000),
-			TZ:   getEnvString("TZ", "UTC"),
-			Zone: getEnvString("ZONE", "local"),
+			PUID:    getEnvInt("PUID", 1000),
+			PGID:    getEnvInt("PGID", 1000),
+			TZ:      getEnvString("TZ", "UTC"),
+			Zone:    getEnvString("ZONE", "local"),
+			DataDir: getEnvString("DATA_DIR", "/app/data"),
 		},
 		Translate: TranslateConfig{
 			//TODO: get from env
@@ -216,6 +219,14 @@ func NewFromEnv(opts ...Option) (*Config, error) {
 	}
 
 	return config, nil
+}
+
+func (c Config) DBPath() string {
+	dataDir := c.System.DataDir
+	if dataDir == "" {
+		dataDir = "/app/data"
+	}
+	return filepath.Join(dataDir, "ctxtrans.db")
 }
 
 // validate checks if all required configuration is properly set

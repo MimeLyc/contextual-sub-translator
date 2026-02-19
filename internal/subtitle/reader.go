@@ -2,6 +2,7 @@ package subtitle
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"regexp"
@@ -37,14 +38,16 @@ func (r *DefaultReader) Read() (*File, error) {
 		return nil, fmt.Errorf("subtitle file does not exist: %s", r.path)
 	}
 
-	file, err := os.Open(r.path)
+	data, err := os.ReadFile(r.path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open subtitle file: %w", err)
+		return nil, fmt.Errorf("failed to read subtitle file: %w", err)
 	}
-	defer file.Close()
+	return ReadSRTBytes(data, r.path)
+}
 
+func ReadSRTBytes(data []byte, path string) (*File, error) {
 	var lines []Line
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 
 	currentLine := Line{}
 	state := "index" // possible values: "index", "time", "text", "empty"
@@ -111,7 +114,7 @@ func (r *DefaultReader) Read() (*File, error) {
 		Lines:    lines,
 		Language: language,
 		Format:   "SRT",
-		Path:     r.path,
+		Path:     path,
 	}, nil
 }
 

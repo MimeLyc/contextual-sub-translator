@@ -48,6 +48,7 @@ After startup, open `http://localhost:8080` for the Jellyfin-style UI.
 | `HTTP_ADDR` | HTTP listen address | `:8080` |
 | `UI_STATIC_DIR` | Built frontend static directory | `/app/web` |
 | `UI_ENABLE` | Enable web UI/static hosting | `true` |
+| `DATA_DIR` | Persistent data directory (`ctxtrans.db` lives here) | `/app/data` |
 | `LOG_LEVEL` | Log level (`DEBUG/INFO/WARN/ERROR/FATAL`) | `INFO` |
 | `CRON_EXPR` | Cron expression for scheduled translation | `0 0 * * *` |
 | `MOVIE_DIR` | Movie root directory | `/movies` |
@@ -91,6 +92,14 @@ The following fields can be changed at runtime via `PUT /api/settings` or by edi
 All other configuration (media directories, HTTP address, agent parameters, etc.) can **only** be set via environment variables.
 
 Runtime updates via the HTTP API are written to `settings.json` atomically (temp file + rename) and take effect immediately. They persist across restarts.
+
+### Persistence
+
+The service stores queue state and translation progress in SQLite at:
+
+`$DATA_DIR/ctxtrans.db` (default `/app/data/ctxtrans.db`).
+
+Persisting `DATA_DIR` as a volume is required for restart-resume behavior.
 
 ### Web Search (Tavily API)
 

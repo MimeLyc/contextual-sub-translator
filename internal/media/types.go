@@ -27,6 +27,7 @@ type Actor struct {
 
 type Operator interface {
 	ReadSubtitleDescription() (subtitle.Descriptions, error)
+	ExtractSubtitleToBytes() ([]byte, error)
 	ExtractSubtitle(
 		toDir string,
 		name string,

@@ -18,6 +18,7 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/config"
 	"github.com/MimeLyc/contextual-sub-translator/internal/jobs"
 	"github.com/MimeLyc/contextual-sub-translator/internal/media"
+	"github.com/MimeLyc/contextual-sub-translator/internal/persistence"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/MimeLyc/contextual-sub-translator/internal/termmap"
 	"github.com/MimeLyc/contextual-sub-translator/internal/tools"
@@ -34,6 +35,7 @@ type transService struct {
 	cronExpr       string
 	cron           *cron.Cron
 	jobQueue       *jobs.Queue
+	store          *persistence.SQLiteStore
 	runFunc        func()
 	cronEntryID    cron.EntryID
 }
@@ -54,8 +56,18 @@ func NewRunnableTransServiceWithQueue(
 	cron *cron.Cron,
 	queue *jobs.Queue,
 ) transService {
+	return NewRunnableTransServiceWithQueueAndStore(cfg, cron, queue, nil)
+}
+
+func NewRunnableTransServiceWithQueueAndStore(
+	cfg config.Config,
+	cron *cron.Cron,
+	queue *jobs.Queue,
+	store *persistence.SQLiteStore,
+) transService {
 	svc := NewRunnableTransService(cfg, cron)
 	svc.jobQueue = queue
+	svc.store = store
 	return svc
 }
 
@@ -203,6 +215,8 @@ func (s *transService) run(
 	ctx context.Context,
 	dir string,
 ) error {
+	s.cleanupExpiredCaches(ctx)
+
 	toTrans, err := s.findTargetMediaTuplesInDir(ctx, dir)
 	if err != nil {
 		log.Error("Failed to find target media tuples in dir %s: %v", dir, err)
@@ -228,7 +242,7 @@ func (s *transService) run(
 	bundleConcurrency := max(1, cfg.Agent.BundleConcurrency)
 	if bundleConcurrency == 1 {
 		for _, bundle := range toTrans {
-			if err := s.processBundle(ctx, bundle, llmAgent, searchEnabled); err != nil {
+			if err := s.processBundle(ctx, bundle, "", llmAgent, searchEnabled); err != nil {
 				return err
 			}
 		}
@@ -248,7 +262,7 @@ func (s *transService) run(
 				return groupCtx.Err()
 			}
 			defer func() { <-sem }()
-			return s.processBundle(groupCtx, bundle, llmAgent, searchEnabled)
+			return s.processBundle(groupCtx, bundle, "", llmAgent, searchEnabled)
 		})
 	}
 
@@ -326,18 +340,9 @@ func (s *transService) processJob(
 		return fmt.Errorf("media_file is required")
 	}
 
-	subtitlePath := job.Payload.SubtitleFile
-	if subtitlePath == "" {
-		extracted, err := media.NewOperator(job.Payload.MediaFile).DefExtractSubtitle()
-		if err != nil {
-			return fmt.Errorf("failed to extract subtitle from media file %s: %w", job.Payload.MediaFile, err)
-		}
-		subtitlePath = extracted
-	}
-
-	subFile, err := subtitle.NewReader(subtitlePath).Read()
+	subFile, err := s.loadSubtitleForJob(ctx, job)
 	if err != nil {
-		return fmt.Errorf("failed to read subtitle file %s: %w", subtitlePath, err)
+		return err
 	}
 
 	bundle := MediaBundle{
@@ -353,18 +358,28 @@ func (s *transService) processJob(
 		}
 	}
 
-	return s.processBundle(ctx, bundle, llmAgent, searchEnabled)
+	return s.processBundle(ctx, bundle, job.ID, llmAgent, searchEnabled)
 }
 
 func (s *transService) processBundle(
 	ctx context.Context,
 	bundle MediaBundle,
+	jobID string,
 	llmAgent *agent.LLMAgent,
 	searchEnabled bool,
 ) error {
 	if len(bundle.SubtitleFiles) == 0 {
 		log.Info("Skipping media %s: no subtitle files available", bundle.MediaFile)
 		return nil
+	}
+	translateCtx := ctx
+	if s.store != nil && jobID != "" {
+		checkpointStore, err := newPersistentBatchCheckpointStore(translateCtx, s.store, jobID)
+		if err != nil {
+			log.Error("Failed to load checkpoints for job %s: %v", jobID, err)
+		} else {
+			translateCtx = withBatchCheckpointStore(translateCtx, checkpointStore)
+		}
 	}
 	targetSub := bundle.SubtitleFiles[0]
 	agentTranslator := translator.NewAgentTranslator(llmAgent, searchEnabled)
@@ -423,11 +438,16 @@ func (s *transService) processBundle(
 	if len(bundle.NFOFiles) > 0 {
 		nfoPath = bundle.NFOFiles[0].Path
 	}
-	if _, err := transLator.Translate(ctx, nfoPath); err != nil {
+	if _, err := transLator.Translate(translateCtx, nfoPath); err != nil {
 		log.Error("Failed to translate subtitle media %s: %v", bundle.MediaFile, err)
 		return err
 	}
 	log.Info("Translated subtitle media %s", bundle.MediaFile)
+	if s.store != nil && jobID != "" {
+		if err := s.store.ClearJobTemp(ctx, jobID); err != nil {
+			log.Warn("Failed to clear temporary data for job %s: %v", jobID, err)
+		}
+	}
 
 	if discoverer, ok := agentTranslator.(translator.TermDiscoverer); ok {
 		toolCalls := discoverer.CollectedToolCalls()
@@ -456,6 +476,83 @@ func (s *transService) processBundle(
 	return nil
 }
 
+func (s *transService) loadSubtitleForJob(ctx context.Context, job *jobs.TranslationJob) (*subtitle.File, error) {
+	if job == nil {
+		return nil, fmt.Errorf("job is nil")
+	}
+
+	subtitlePath := job.Payload.SubtitleFile
+	if subtitlePath != "" {
+		subFile, err := subtitle.NewReader(subtitlePath).Read()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read subtitle file %s: %w", subtitlePath, err)
+		}
+		return subFile, nil
+	}
+
+	cacheKey := subtitleCacheKey(job.Payload.MediaFile)
+	if s.store != nil {
+		cached, ok, err := s.store.GetSubtitleCache(ctx, cacheKey)
+		if err != nil {
+			log.Error("Failed to load subtitle cache %s: %v", cacheKey, err)
+		} else if ok {
+			return &cached, nil
+		}
+	}
+
+	operator := media.NewOperator(job.Payload.MediaFile)
+	payload, err := operator.ExtractSubtitleToBytes()
+	if err != nil {
+		// Fallback to file extraction for environments where stdout extraction is unavailable.
+		extracted, fileErr := operator.DefExtractSubtitle()
+		if fileErr != nil {
+			return nil, fmt.Errorf("failed to extract subtitle from media file %s: %w", job.Payload.MediaFile, err)
+		}
+		subFile, readErr := subtitle.NewReader(extracted).Read()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read subtitle file %s: %w", extracted, readErr)
+		}
+		if s.store != nil {
+			if cacheErr := s.store.PutSubtitleCache(ctx, persistence.SubtitleCacheEntry{
+				CacheKey:  cacheKey,
+				MediaPath: job.Payload.MediaFile,
+				JobID:     job.ID,
+				File:      *subFile,
+				IsTemp:    true,
+			}); cacheErr != nil {
+				log.Error("Failed to save subtitle cache %s: %v", cacheKey, cacheErr)
+			}
+		}
+		return subFile, nil
+	}
+	subFile, err := subtitle.ReadSRTBytes(payload, syntheticSubtitlePath(job.Payload.MediaFile))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse extracted subtitle of media %s: %w", job.Payload.MediaFile, err)
+	}
+	if s.store != nil {
+		if err := s.store.PutSubtitleCache(ctx, persistence.SubtitleCacheEntry{
+			CacheKey:  cacheKey,
+			MediaPath: job.Payload.MediaFile,
+			JobID:     job.ID,
+			File:      *subFile,
+			IsTemp:    true,
+		}); err != nil {
+			log.Error("Failed to save subtitle cache %s: %v", cacheKey, err)
+		}
+	}
+	return subFile, nil
+}
+
+func subtitleCacheKey(mediaPath string) string {
+	return mediaPath + "|s:0"
+}
+
+func syntheticSubtitlePath(mediaPath string) string {
+	ext := filepath.Ext(mediaPath)
+	stem := strings.TrimSuffix(filepath.Base(mediaPath), ext)
+	return filepath.Join(filepath.Dir(mediaPath), stem+"_ctxtrans_embedded.srt")
+}
+
 func (s *transService) findTargetMediaTuplesInDir(
 	ctx context.Context,
 	dir string,
@@ -468,6 +565,23 @@ func (s *transService) findTargetMediaTuplesInDir(
 
 	ret = make([]MediaBundle, 0, len(all))
 	for _, bundle := range all {
+		mediaPath := bundle.MediaFile
+		now := time.Now().UTC()
+		var cachedMeta persistence.MediaMetaCache
+		cachedHit := false
+		if s.store != nil && mediaPath != "" {
+			meta, ok, err := s.store.GetMediaMetaCache(ctx, mediaPath, cfg.Translate.TargetLanguage.String(), now)
+			if err != nil {
+				log.Error("Failed to load media metadata cache for %s: %v", mediaPath, err)
+			} else if ok {
+				cachedMeta = meta
+				cachedHit = true
+			}
+		}
+		if cachedHit && (cachedMeta.HasTargetExternal || cachedMeta.HasTargetEmbedded) {
+			continue
+		}
+
 		subtitles, err := s.readSubtitleFiles(ctx, bundle.SubtitleFiles)
 		if err != nil {
 			log.Error("Failed to read subtitle files of media file %s: %v", bundle.MediaFile, err)
@@ -479,13 +593,31 @@ func (s *transService) findTargetMediaTuplesInDir(
 			continue
 		}
 
-		// If target subtitle is built into media file, skip
 		mediaReader := media.NewOperator(bundle.MediaFile)
-		subDescs, err := mediaReader.ReadSubtitleDescription()
-		if err != nil {
-			log.Error("Failed to read subtitle description of media file %s: %v", bundle.MediaFile, err)
-			// Keep processing with external subtitle signals even if ffprobe is unavailable.
-			subDescs = nil
+		var subDescs subtitle.Descriptions
+		if cachedHit {
+			subDescs = descriptionsFromLanguageCodes(cachedMeta.EmbeddedLanguages)
+		} else {
+			subDescs, err = mediaReader.ReadSubtitleDescription()
+			if err != nil {
+				log.Error("Failed to read subtitle description of media file %s: %v", bundle.MediaFile, err)
+				// Keep processing with external subtitle signals even if ffprobe is unavailable.
+				subDescs = nil
+			}
+			if s.store != nil && mediaPath != "" {
+				if err := s.store.PutMediaMetaCache(ctx, persistence.MediaMetaCache{
+					MediaPath:         mediaPath,
+					TargetLanguage:    cfg.Translate.TargetLanguage.String(),
+					ExternalLanguages: subtitleLanguages(subtitles),
+					EmbeddedLanguages: descriptionLanguages(subDescs),
+					HasTargetExternal: containTargetSubtitle(subtitles, cfg.Translate.TargetLanguage),
+					HasTargetEmbedded: subDescs.HasLanguage(cfg.Translate.TargetLanguage),
+					ExpiresAt:         now.Add(10 * time.Minute),
+					UpdatedAt:         now,
+				}); err != nil {
+					log.Error("Failed to save media metadata cache for %s: %v", mediaPath, err)
+				}
+			}
 		}
 		if subDescs.HasLanguage(cfg.Translate.TargetLanguage) {
 			log.Info("Target subtitle already exists in media file %s", bundle.MediaFile)
@@ -879,6 +1011,61 @@ func parseNFODate(raw string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+func subtitleLanguages(subtitles []subtitle.File) []string {
+	if len(subtitles) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(subtitles))
+	ret := make([]string, 0, len(subtitles))
+	for _, sub := range subtitles {
+		lang := strings.TrimSpace(sub.Language.String())
+		if lang == "" || lang == "und" || seen[lang] {
+			continue
+		}
+		seen[lang] = true
+		ret = append(ret, lang)
+	}
+	return ret
+}
+
+func descriptionLanguages(descs subtitle.Descriptions) []string {
+	if len(descs) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(descs))
+	ret := make([]string, 0, len(descs))
+	for _, desc := range descs {
+		code := strings.TrimSpace(desc.LangTag.String())
+		if code == "" || code == "und" {
+			code = strings.TrimSpace(desc.Language)
+		}
+		if code == "" || code == "und" || seen[code] {
+			continue
+		}
+		seen[code] = true
+		ret = append(ret, code)
+	}
+	return ret
+}
+
+func descriptionsFromLanguageCodes(langs []string) subtitle.Descriptions {
+	if len(langs) == 0 {
+		return nil
+	}
+	ret := make(subtitle.Descriptions, 0, len(langs))
+	for _, langCode := range langs {
+		langCode = strings.TrimSpace(langCode)
+		if langCode == "" {
+			continue
+		}
+		ret = append(ret, subtitle.Description{
+			Language: langCode,
+			LangTag:  language.All.Make(langCode),
+		})
+	}
+	return ret
+}
+
 // isSubtitleFile checks if the file extension is a subtitle format
 func isSubtitleFile(ext string) bool {
 	return slices.Contains(subtitleExts, ext)
@@ -953,4 +1140,18 @@ func (s *transService) startTime() (time.Time, error) {
 	}
 
 	return lastTriggerTime, nil
+}
+
+func (s *transService) cleanupExpiredCaches(ctx context.Context) {
+	if s.store == nil {
+		return
+	}
+	n, err := s.store.DeleteExpiredMediaMetaCache(ctx, time.Now().UTC())
+	if err != nil {
+		log.Error("Failed to cleanup expired media meta cache: %v", err)
+		return
+	}
+	if n > 0 {
+		log.Info("Cleaned up %d expired media meta cache entries", n)
+	}
 }

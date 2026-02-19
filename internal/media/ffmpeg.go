@@ -86,6 +86,20 @@ func (ff ffmpeg) ExtractSubtitle(
 	return output, err
 }
 
+func (ff ffmpeg) ExtractSubtitleToBytes() ([]byte, error) {
+	cmdPath, err := exec.LookPath(ff.ffmpegCmd)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(cmdPath, ff.extractSubBytesArgs()...)
+	output, err := cmd.Output()
+	if err != nil {
+		log.Error("Execution failed: %v", err)
+		return nil, err
+	}
+	return output, nil
+}
+
 // Extract subtitle from media file and save to target path
 func (ff ffmpeg) DefExtractSubtitle() (string, error) {
 	ext := filepath.Ext(ff.fileName)
@@ -171,5 +185,16 @@ func (f ffmpeg) extractSubArgs(targetPath string) []string {
 		"-c:s", "srt", // convert to srt
 		"-f", "srt", // output format
 		targetPath,
+	}
+}
+
+func (f ffmpeg) extractSubBytesArgs() []string {
+	return []string{
+		"-v", "error",
+		"-i", f.filePath,
+		"-map", "0:s:0", // select first subtitle
+		"-c:s", "srt", // convert to srt
+		"-f", "srt", // output format
+		"-",
 	}
 }
