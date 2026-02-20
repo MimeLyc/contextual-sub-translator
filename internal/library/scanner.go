@@ -683,6 +683,7 @@ func findMediaFiles(root string) ([]string, error) {
 func findExternalSubtitles(dir string, mediaBase string, target language.Tag) (sourceSubs []string, targetSubs []string, languages []string, err error) {
 	sourceSubs = make([]string, 0)
 	targetSubs = make([]string, 0)
+	mediaBases := subtitleMatchMediaBases(mediaBase)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -701,11 +702,18 @@ func findExternalSubtitles(dir string, mediaBase string, target language.Tag) (s
 			continue
 		}
 		stem := strings.TrimSuffix(name, ext)
-		if !subtitleMatchesMediaBase(stem, mediaBase) {
+		matchedBase := ""
+		for _, base := range mediaBases {
+			if subtitleMatchesMediaBase(stem, base) {
+				matchedBase = base
+				break
+			}
+		}
+		if matchedBase == "" {
 			continue
 		}
 
-		token := subtitleLangToken(stem, mediaBase)
+		token := subtitleLangToken(stem, matchedBase)
 		if lang := normalizeLangCode(token); lang != "" && !seen[lang] {
 			seen[lang] = true
 			languages = append(languages, lang)
@@ -720,6 +728,15 @@ func findExternalSubtitles(dir string, mediaBase string, target language.Tag) (s
 	}
 
 	return sourceSubs, targetSubs, languages, nil
+}
+
+func subtitleMatchMediaBases(mediaBase string) []string {
+	ret := []string{mediaBase}
+	trimmed := strings.TrimSpace(qualitySuffixPattern.ReplaceAllString(mediaBase, ""))
+	if trimmed != "" && trimmed != mediaBase {
+		ret = append(ret, trimmed)
+	}
+	return ret
 }
 
 func subtitleLangToken(stem, mediaBase string) string {

@@ -332,6 +332,32 @@ func TestScanner_SubtitleMatchRequiresBoundaryAfterMediaBase(t *testing.T) {
 	assert.False(t, ep.Translatable)
 }
 
+func TestScanner_SubtitleMatchAllowsMediaSuffixNoise(t *testing.T) {
+	tmp := t.TempDir()
+	sourceDir := filepath.Join(tmp, "shows", "Series")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+
+	mediaName := "Show.S01E01.1080p.WEB-DL.mkv"
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, mediaName), []byte("m"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "Show.S01E01.srt"), []byte("s"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, "Show.S01E01.zh.srt"), []byte("s"), 0o644))
+
+	scanner := NewScanner(
+		[]SourceConfig{{ID: "shows", Name: "Shows", Path: filepath.Join(tmp, "shows")}},
+		language.Chinese,
+	)
+
+	lib, err := scanner.Scan(context.Background())
+	require.NoError(t, err)
+	require.Len(t, lib.Episodes, 1)
+
+	ep := lib.Episodes[0]
+	assert.Equal(t, filepath.Join(sourceDir, mediaName), ep.MediaPath)
+	assert.True(t, ep.Subtitles.HasSourceSubtitle)
+	assert.True(t, ep.Subtitles.HasTargetSubtitle)
+	assert.False(t, ep.Translatable)
+}
+
 func TestScanner_ScanSources(t *testing.T) {
 	tmp := t.TempDir()
 	sourcePath := filepath.Join(tmp, "tvshows")
