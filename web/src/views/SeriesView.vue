@@ -8,11 +8,13 @@
       </div>
       <div class="row-gap">
         <button class="btn" @click="refresh">Reload</button>
-        <button class="btn btn-primary" :disabled="selectedCount === 0" @click="submitSelected">
-          Translate {{ selectedCount }} Selected
+        <button class="btn btn-primary" :disabled="selectedCount === 0 || submitting" @click="submitSelected">
+          {{ submitButtonLabel }}
         </button>
       </div>
     </div>
+
+    <p v-if="message" class="settings-message">{{ message }}</p>
 
     <div class="episode-list">
       <template v-for="group in seasonGroups" :key="group.season">
@@ -52,12 +54,23 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { createJob, listEpisodes, type Episode } from "../api";
 
+const EPISODE_REFRESH_INTERVAL_MS = 30_000;
+
 const route = useRoute();
 const episodes = ref<Episode[]>([]);
 const targetLanguage = ref("");
 const selectedEpisodeIds = ref<string[]>([]);
 const selectedCount = computed(() => selectedEpisodeIds.value.length);
-let evt: EventSource | null = null;
+const submitting = ref(false);
+const message = ref("");
+const submitButtonLabel = computed(() => {
+  if (submitting.value) {
+    return `Queuing ${selectedCount.value} Selected...`;
+  }
+  return `Translate ${selectedCount.value} Selected`;
+});
+let refreshTimer: number | null = null;
+let refreshing = false;
 
 const seriesName = computed(() => {
   const rawItemId = route.params.itemId as string;
@@ -155,43 +168,91 @@ function dedupeKey(ep: Episode): string {
 }
 
 async function refresh() {
-  const rawItemId = route.params.itemId as string;
-  const resp = await listEpisodes(decodeURIComponent(rawItemId));
-  episodes.value = resp.episodes || [];
-  targetLanguage.value = resp.target_language || "";
-  selectedEpisodeIds.value = selectedEpisodeIds.value.filter((id) =>
-    episodes.value.some((ep) => ep.id === id && ep.translatable && !ep.in_progress)
-  );
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    const rawItemId = route.params.itemId as string;
+    const resp = await listEpisodes(decodeURIComponent(rawItemId));
+    episodes.value = resp.episodes || [];
+    targetLanguage.value = resp.target_language || "";
+    selectedEpisodeIds.value = selectedEpisodeIds.value.filter((id) =>
+      episodes.value.some((ep) => ep.id === id && ep.translatable && !ep.in_progress)
+    );
+  } catch (err) {
+    message.value = `Failed to refresh episodes: ${toErrorMessage(err)}`;
+  } finally {
+    refreshing = false;
+  }
 }
 
 async function submitSelected() {
+  if (submitting.value) return;
   const selected = episodes.value.filter(
     (ep) => selectedEpisodeIds.value.includes(ep.id) && ep.translatable && !ep.in_progress
   );
-  for (const ep of selected) {
-    await createJob({
-      source: "manual",
-      dedupeKey: dedupeKey(ep),
-      mediaPath: ep.media_path,
-      subtitlePath: ep.subtitles.source_subtitle_files[0] || ""
-    });
+  if (selected.length === 0) {
+    message.value = "No translatable episodes selected.";
+    return;
   }
+
+  submitting.value = true;
+  message.value = "";
+  let createdCount = 0;
+  let dedupedCount = 0;
+  let failedCount = 0;
+
+  const results = await Promise.allSettled(
+    selected.map((ep) =>
+      createJob({
+        source: "manual",
+        dedupeKey: dedupeKey(ep),
+        mediaPath: ep.media_path,
+        subtitlePath: ep.subtitles.source_subtitle_files[0] || ""
+      })
+    )
+  );
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      if (result.value.created) {
+        createdCount += 1;
+      } else {
+        dedupedCount += 1;
+      }
+    } else {
+      failedCount += 1;
+    }
+  }
+
+  if (failedCount > 0) {
+    message.value = `Queued ${createdCount} episode(s), skipped ${dedupedCount}, failed ${failedCount}.`;
+  } else {
+    message.value = `Queued ${createdCount} episode(s), skipped ${dedupedCount}.`;
+  }
+
   selectedEpisodeIds.value = [];
   await refresh();
+  submitting.value = false;
+}
+
+function toErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message.trim()) {
+    return err.message;
+  }
+  return "unknown error";
 }
 
 onMounted(async () => {
   await refresh();
-  evt = new EventSource("/api/jobs/stream");
-  evt.onmessage = () => {
+  refreshTimer = window.setInterval(() => {
     void refresh();
-  };
+  }, EPISODE_REFRESH_INTERVAL_MS);
 });
 
 onUnmounted(() => {
-  if (evt) {
-    evt.close();
-    evt = null;
+  if (refreshTimer !== null) {
+    window.clearInterval(refreshTimer);
+    refreshTimer = null;
   }
 });
 </script>

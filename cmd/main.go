@@ -106,6 +106,7 @@ func main() {
 	httpSrv := httpapi.NewServer(
 		scanner,
 		jobQueue,
+		httpapi.WithJobDataStore(store),
 		httpapi.WithRuntimeSettingsStore(settingsStore),
 		httpapi.WithRuntimeSettingsApplier(func(next config.RuntimeSettings) error {
 			if err := cronSvc.ApplyRuntimeSettings(next); err != nil {

@@ -92,3 +92,26 @@ func TestQueue_Enqueue_AllowsRetryAfterSuccess(t *testing.T) {
 	require.NotNil(t, second)
 	assert.NotEqual(t, first.ID, second.ID)
 }
+
+func TestQueue_List_SortedByCreatedAtDesc(t *testing.T) {
+	q := NewQueue(1, nil)
+	first, created := q.Enqueue(EnqueueRequest{Source: "manual", DedupeKey: "a"})
+	require.True(t, created)
+	second, created := q.Enqueue(EnqueueRequest{Source: "manual", DedupeKey: "b"})
+	require.True(t, created)
+	third, created := q.Enqueue(EnqueueRequest{Source: "manual", DedupeKey: "c"})
+	require.True(t, created)
+
+	base := time.Date(2026, 2, 19, 10, 0, 0, 0, time.UTC)
+	q.mu.Lock()
+	q.jobs[first.ID].CreatedAt = base
+	q.jobs[second.ID].CreatedAt = base.Add(2 * time.Second)
+	q.jobs[third.ID].CreatedAt = base.Add(2 * time.Second)
+	q.mu.Unlock()
+
+	got := q.List()
+	require.Len(t, got, 3)
+	assert.Equal(t, third.ID, got[0].ID)
+	assert.Equal(t, second.ID, got[1].ID)
+	assert.Equal(t, first.ID, got[2].ID)
+}
