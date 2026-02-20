@@ -54,6 +54,45 @@ export interface JobPayload {
   nfo_file: string;
 }
 
+export interface JobProgress {
+  translated_lines: number;
+  total_lines: number;
+  percent: number;
+}
+
+export interface JobEpisodeInfo {
+  source_id: string;
+  item_id: string;
+  series_name: string;
+  season: string;
+  episode_name: string;
+  media_path: string;
+  subtitle_path: string;
+  output_subtitle_path: string;
+}
+
+export interface JobPreviewLine {
+  index: number;
+  original_text: string;
+  translated_text: string;
+}
+
+export interface JobDetail {
+  job: Job;
+  target_language: string;
+  progress: JobProgress;
+  episode: JobEpisodeInfo;
+  preview: JobPreviewLine[];
+  preview_offset: number;
+  preview_limit: number;
+  editable: boolean;
+}
+
+export interface JobLinePatch {
+  index: number;
+  translated_text: string;
+}
+
 export interface RuntimeSettings {
   llm_api_url: string;
   llm_api_key: string;
@@ -68,6 +107,11 @@ export interface CreateJobRequest {
   mediaPath: string;
   subtitlePath?: string;
   nfoPath?: string;
+}
+
+export interface CreateJobResponse {
+  created: boolean;
+  job: Job;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -107,8 +151,23 @@ export function listJobs(): Promise<Job[]> {
   return request<Job[]>("/api/jobs");
 }
 
-export async function createJob(req: CreateJobRequest): Promise<Job> {
-  const ret = await request<{ created: boolean; job: Job }>("/api/jobs", {
+export function getJobDetail(jobId: string, offset = 0, limit = 80): Promise<JobDetail> {
+  const q = new URLSearchParams({
+    offset: String(offset),
+    limit: String(limit)
+  });
+  return request<JobDetail>(`/api/jobs/${encodeURIComponent(jobId)}?${q.toString()}`);
+}
+
+export function updateJobLines(jobId: string, lines: JobLinePatch[]): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${encodeURIComponent(jobId)}/lines`, {
+    method: "PUT",
+    body: JSON.stringify({ lines })
+  });
+}
+
+export function createJob(req: CreateJobRequest): Promise<CreateJobResponse> {
+  return request<CreateJobResponse>("/api/jobs", {
     method: "POST",
     body: JSON.stringify({
       source: req.source,
@@ -118,7 +177,6 @@ export async function createJob(req: CreateJobRequest): Promise<Job> {
       nfo_path: req.nfoPath || ""
     })
   });
-  return ret.job;
 }
 
 export async function triggerScan(): Promise<void> {

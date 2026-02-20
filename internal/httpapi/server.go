@@ -12,6 +12,8 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/config"
 	"github.com/MimeLyc/contextual-sub-translator/internal/jobs"
 	"github.com/MimeLyc/contextual-sub-translator/internal/library"
+	"github.com/MimeLyc/contextual-sub-translator/internal/persistence"
+	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 )
 
 type runtimeSettingsStore interface {
@@ -21,11 +23,17 @@ type runtimeSettingsStore interface {
 
 type runtimeSettingsApplier func(next config.RuntimeSettings) error
 
+type jobDataStore interface {
+	LoadBatchCheckpoints(ctx context.Context, jobID string) ([]persistence.BatchCheckpoint, error)
+	GetSubtitleCache(ctx context.Context, cacheKey string) (subtitle.File, bool, error)
+}
+
 type Server struct {
 	scanner  *library.Scanner
 	queue    *jobs.Queue
 	settings runtimeSettingsStore
 	apply    runtimeSettingsApplier
+	jobData  jobDataStore
 
 	uiEnabled   bool
 	uiStaticDir string
@@ -52,6 +60,12 @@ func WithRuntimeSettingsStore(store runtimeSettingsStore) Option {
 func WithRuntimeSettingsApplier(apply runtimeSettingsApplier) Option {
 	return func(s *Server) {
 		s.apply = apply
+	}
+}
+
+func WithJobDataStore(store jobDataStore) Option {
+	return func(s *Server) {
+		s.jobData = store
 	}
 }
 
@@ -95,6 +109,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/library/items/", s.handleListEpisodesByItem)
 	s.mux.HandleFunc("/api/jobs", s.handleJobs)
 	s.mux.HandleFunc("/api/jobs/stream", s.handleJobStream)
+	s.mux.HandleFunc("/api/jobs/", s.handleJobDetailRoutes)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
 	s.mux.HandleFunc("/api/settings", s.handleSettings)
 	s.mux.HandleFunc("/", s.handleStatic)

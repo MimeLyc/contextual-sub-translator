@@ -99,12 +99,20 @@ func (q *Queue) Get(id string) (*TranslationJob, bool) {
 
 func (q *Queue) List() []*TranslationJob {
 	q.mu.RLock()
-	defer q.mu.RUnlock()
-
 	ret := make([]*TranslationJob, 0, len(q.jobs))
 	for _, job := range q.jobs {
 		ret = append(ret, cloneJob(job))
 	}
+	q.mu.RUnlock()
+
+	sort.Slice(ret, func(i, j int) bool {
+		left := ret[i]
+		right := ret[j]
+		if left.CreatedAt.Equal(right.CreatedAt) {
+			return left.ID > right.ID
+		}
+		return left.CreatedAt.After(right.CreatedAt)
+	})
 	return ret
 }
 
