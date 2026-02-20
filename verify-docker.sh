@@ -22,6 +22,9 @@ docker-compose build
 echo "🔍 Validating image contents..."
 docker run --rm -it ctxtrans:latest ffmpeg -version || echo "❌ ffmpeg not properly installed"
 docker run --rm -it ctxtrans:latest ffprobe -version || echo "❌ ffprobe not properly installed"
+docker run --rm ctxtrans:latest sh -c "ffmpeg -hide_banner -decoders | grep -qi 'libaribb24.*arib_caption'" \
+  && echo "✅ libaribb24 decoder available" \
+  || echo "❌ libaribb24 decoder missing"
 
 # Check environment variables
 echo "⚙️  Checking environment variables..."
@@ -56,8 +59,9 @@ test_api_key() {
 echo "📋 Manual testing examples:"
 echo "  1. Run interactive shell: docker-compose run --rm ctxtrans sh"
 echo "  2. Check ffmpeg: docker-compose run --rm ctxtrans ffmpeg -version"
-echo "  3. Check filesystem: docker-compose run --rm ctxtrans ls -la /movies"
-echo "  4. Environment variables test: docker-compose run --rm ctxtrans printenv"
+echo "  3. Check ARIB decoder: docker-compose run --rm ctxtrans sh -c 'ffmpeg -hide_banner -decoders | grep -i libaribb24'"
+echo "  4. Check filesystem: docker-compose run --rm ctxtrans ls -la /movies"
+echo "  5. Environment variables test: docker-compose run --rm ctxtrans printenv"
 
 test_api_key
 

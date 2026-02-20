@@ -17,17 +17,58 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /out/ctxtrans ./cmd/main.go
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim AS ffmpeg-builder
 
-RUN apt-get update && apt-get install -y \
+ARG FFMPEG_VERSION=7.1.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     ca-certificates \
-    ffmpeg \
+    curl \
+    libaribb24-dev \
+    nasm \
+    pkg-config \
+    xz-utils \
+    yasm \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp/ffmpeg
+
+RUN curl -fsSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" -o ffmpeg.tar.xz \
+    && mkdir src \
+    && tar -xJf ffmpeg.tar.xz -C src --strip-components=1 \
+    && cd src \
+    && ./configure \
+        --prefix=/opt/ffmpeg \
+        --disable-debug \
+        --disable-doc \
+        --disable-ffplay \
+        --enable-ffmpeg \
+        --enable-ffprobe \
+        --enable-gpl \
+        --enable-version3 \
+        --enable-libaribb24 \
+    && make -j"$(nproc)" \
+    && make install \
+    && /opt/ffmpeg/bin/ffmpeg -hide_banner -decoders | grep -q "libaribb24.*arib_caption"
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libaribb24-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+COPY --from=ffmpeg-builder /opt/ffmpeg /opt/ffmpeg
 COPY --from=go-builder /out/ctxtrans /app/ctxtrans
 COPY --from=web-builder /web/dist /app/web
+
+ENV PATH=/opt/ffmpeg/bin:${PATH}
+ENV LD_LIBRARY_PATH=/opt/ffmpeg/lib
+
+RUN ffmpeg -hide_banner -decoders | grep -q "libaribb24.*arib_caption"
 
 ENV LLM_API_KEY=""
 ENV LLM_API_URL=https://openrouter.ai/api/v1
