@@ -9,25 +9,24 @@
 
     <div class="jobs-layout">
       <div class="job-list">
-        <div class="job-list-head">
-          <span>ID</span>
-          <span>片名</span>
-          <span>剧集名称</span>
-          <span>创建时间</span>
-          <span>状态</span>
-        </div>
         <article
           v-for="job in jobs"
           :key="job.id"
-          class="job-row job-row-compact job-selectable"
+          class="job-row job-card job-selectable"
           :class="{ active: selectedJobId === job.id }"
           @click="selectJob(job.id)"
         >
-          <span class="job-cell">{{ job.id }}</span>
-          <span class="job-cell">{{ titleName(job) }}</span>
-          <span class="job-cell">{{ episodeName(job) }}</span>
-          <span class="job-cell">{{ formatCreatedAt(job.created_at) }}</span>
-          <span class="chip" :class="statusClass(job.status)">{{ job.status }}</span>
+          <div class="job-main">
+            <div class="job-title-line">
+              <strong class="job-title">{{ titleName(job) }}</strong>
+              <span class="chip" :class="statusClass(job.status)">{{ job.status }}</span>
+            </div>
+            <div class="job-subline">{{ episodeName(job) }}</div>
+            <div class="job-meta-line">
+              <span class="job-meta">ID: {{ job.id }}</span>
+              <span class="job-meta">{{ formatCreatedAt(job.created_at) }}</span>
+            </div>
+          </div>
         </article>
       </div>
 
