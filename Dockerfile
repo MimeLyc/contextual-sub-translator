@@ -26,10 +26,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     libaribb24-dev \
+    libbz2-dev \
+    liblzma-dev \
     nasm \
     pkg-config \
     xz-utils \
     yasm \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp/ffmpeg
