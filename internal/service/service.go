@@ -425,6 +425,7 @@ func (s *transService) processBundle(
 			SubtitleFile:   &targetSub,
 			OutputDir:      filepath.Dir(bundle.MediaFile),
 			InputPath:      targetSub.Path,
+			MediaPath:      bundle.MediaFile,
 			TermMap:        termMapData,
 		},
 		agentTranslator,

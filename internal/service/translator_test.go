@@ -11,6 +11,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/text/language"
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/agent"
@@ -614,15 +615,98 @@ func TestTranslateFile_WithLLMClient_Integration(t *testing.T) {
 }
 
 func TestOutputPath(t *testing.T) {
+	t.Run("strips trailing source language from subtitle name", func(t *testing.T) {
+		config := TranslatorConfig{
+			TargetLanguage: language.Chinese,
+			OutputDir:      "testdata/output",
+			InputPath:      "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt",
+		}
+
+		op := config.OutputPath()
+		assert.Equal(t, "testdata/output/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].zh.srt", op)
+	})
+
+	t.Run("prefers media basename when provided", func(t *testing.T) {
+		config := TranslatorConfig{
+			TargetLanguage: language.Chinese,
+			OutputDir:      "testdata/output",
+			InputPath:      "testdata/data/episode01.eng.srt",
+			MediaPath:      "testdata/media/episode01.mkv",
+		}
+
+		op := config.OutputPath()
+		assert.Equal(t, "testdata/output/episode01.zh.srt", op)
+	})
+
+	t.Run("strips legacy ctxtrans suffixes", func(t *testing.T) {
+		config := TranslatorConfig{
+			TargetLanguage: language.Chinese,
+			OutputDir:      "testdata/output",
+			InputPath:      "testdata/data/episode01_ctxtrans.en.srt",
+		}
+
+		op := config.OutputPath()
+		assert.Equal(t, "testdata/output/episode01.zh.srt", op)
+	})
+}
+
+func TestTranslateFile_OutputPathAlreadyExists(t *testing.T) {
+	mockNFO := &mockNFOReader{}
+	mockSubReader := &mockSubtitleReader{}
+	mockSubWriter := &mockSubtitleWriter{}
+	mockTrans := &mockTranslator{}
+
+	tmp := t.TempDir()
+	subtitlePath := filepath.Join(tmp, "episode01.en.srt")
+	mediaPath := filepath.Join(tmp, "episode01.mkv")
+	outputPath := filepath.Join(tmp, "episode01.zh.srt")
+
+	require.NoError(t, os.WriteFile(outputPath, []byte("existing subtitle"), 0o644))
+
 	config := TranslatorConfig{
 		TargetLanguage: language.Chinese,
-		BatchSize:      10, // Small batch for testing
+		BatchSize:      10,
 		ContextEnabled: true,
-		OutputDir:      "testdata/output",
-		Verbose:        true,
-		InputPath:      "testdata/data/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng.srt",
+		InputPath:      subtitlePath,
+		MediaPath:      mediaPath,
+		OutputDir:      tmp,
 	}
 
-	op := config.OutputPath()
-	assert.Equal(t, "testdata/output/DAN.DA.DAN.s02e06.[WEBDL-720p].[Erai-raws].eng_ctxtrans.zh.srt", op)
+	translator := &FileTranslator{
+		nfoReader:      mockNFO,
+		subtitleReader: mockSubReader,
+		subtitleWriter: mockSubWriter,
+		translator:     mockTrans,
+		config:         config,
+	}
+
+	ctx := context.Background()
+	nfoPath := filepath.Join(tmp, "tvshow.nfo")
+	testTVShow := createDANDANTVShowInfo()
+	testSubtitleFile := createDANDANSubtitleFile()
+	testTranslatedLines := createDANDANTranslatedLines()
+
+	mockNFO.On("ReadTVShowInfo", nfoPath).Return(testTVShow, nil)
+	mockSubReader.On("Read").Return(testSubtitleFile, nil)
+	mockTrans.On(
+		"BatchTranslate",
+		ctx,
+		mock.AnythingOfType("translator.MediaMeta"),
+		testSubtitleFile.Lines,
+		mock.Anything,
+		mock.Anything,
+		10,
+	).Return(testTranslatedLines, nil)
+
+	result, err := translator.Translate(ctx, nfoPath)
+
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "output subtitle already exists")
+	assert.Contains(t, err.Error(), outputPath)
+
+	mockNFO.AssertExpectations(t)
+	mockSubReader.AssertExpectations(t)
+	mockTrans.AssertExpectations(t)
+	mockSubWriter.AssertNotCalled(t, "Write")
 }

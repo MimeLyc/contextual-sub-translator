@@ -504,25 +504,15 @@ func buildOutputSubtitlePath(job *jobs.TranslationJob, targetLanguage string) st
 	if subPath == "" {
 		subPath = syntheticEmbeddedSubtitlePath(mediaPath)
 	}
-	base := filepath.Base(subPath)
-	ext := filepath.Ext(base)
-	if ext == "" {
-		ext = ".srt"
-	}
-	stem := strings.TrimSuffix(base, ext)
-	if idx := strings.Index(stem, "_ctxtrans"); idx >= 0 {
-		stem = stem[:idx]
-	}
-	if stem == "" {
-		mediaBase := filepath.Base(mediaPath)
-		mediaExt := filepath.Ext(mediaBase)
-		stem = strings.TrimSuffix(mediaBase, mediaExt)
-	}
 	if targetLanguage == "" {
 		targetLanguage = "zh"
 	}
-	outputName := stem + "_ctxtrans." + targetLanguage + ext
-	return filepath.Join(filepath.Dir(mediaPath), outputName)
+	outputName := subtitle.DefaultTranslatedOutputName(mediaPath, subPath, targetLanguage)
+	outputDir := filepath.Dir(mediaPath)
+	if outputDir == "." && subPath != "" {
+		outputDir = filepath.Dir(subPath)
+	}
+	return filepath.Join(outputDir, outputName)
 }
 
 func syntheticEmbeddedSubtitlePath(mediaPath string) string {

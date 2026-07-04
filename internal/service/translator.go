@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -19,6 +20,7 @@ type TranslatorConfig struct {
 	BatchSize      int
 	ContextEnabled bool
 	InputPath      string
+	MediaPath      string
 	SubtitleFile   *subtitle.File
 
 	OutputDir  string
@@ -31,18 +33,15 @@ type TranslatorConfig struct {
 func (c TranslatorConfig) OutputPath() string {
 	outputDir := c.OutputDir
 	if outputDir == "" {
-		outputDir = filepath.Dir(c.InputPath)
+		if c.MediaPath != "" {
+			outputDir = filepath.Dir(c.MediaPath)
+		} else {
+			outputDir = filepath.Dir(c.InputPath)
+		}
 	}
 	outputName := c.OutputName
 	if outputName == "" {
-		base := filepath.Base(c.InputPath)
-		ext := filepath.Ext(c.InputPath)
-		stem := strings.TrimSuffix(base, ext)
-		if idx := strings.Index(stem, "_ctxtrans"); idx >= 0 {
-			// Already a ctxtrans file — replace from the marker onward
-			stem = stem[:idx]
-		}
-		outputName = stem + "_ctxtrans." + c.TargetLanguage.String() + ext
+		outputName = subtitle.DefaultTranslatedOutputName(c.MediaPath, c.InputPath, c.TargetLanguage.String())
 	}
 	return filepath.Join(outputDir, outputName)
 }
@@ -93,6 +92,9 @@ func (t *SubTranslator) Translate(
 
 	// Save translation results if output path is specified
 	if outputPath != "" {
+		if err := ensureOutputPathAvailable(outputPath); err != nil {
+			return nil, err
+		}
 		if err := t.subtitleWriter.Write(outputPath, translatedFile); err != nil {
 			return nil, fmt.Errorf("failed to save translation results: %w", err)
 		}
@@ -113,6 +115,21 @@ func (t *SubTranslator) Translate(
 	}
 
 	return result, nil
+}
+
+func ensureOutputPathAvailable(path string) error {
+	if path == "" {
+		return nil
+	}
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return fmt.Errorf("output subtitle already exists: %s", path)
+	case os.IsNotExist(err):
+		return nil
+	default:
+		return fmt.Errorf("failed to inspect output subtitle path %s: %w", path, err)
+	}
 }
 
 // translateSubtitleLines translates subtitle lines
