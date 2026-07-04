@@ -448,7 +448,7 @@ func TestServer_GetJobDetail_FallsBackTargetLanguageWhenDedupeSuffixIsNotLanguag
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, "zh", resp.TargetLanguage)
-	require.Equal(t, filepath.Join(showDir, "episode01_ctxtrans.zh.srt"), resp.Episode.OutputSubtitlePath)
+	require.Equal(t, filepath.Join(showDir, "episode01.zh.srt"), resp.Episode.OutputSubtitlePath)
 }
 
 func TestServer_UpdateJobLine_RejectsRunningJob(t *testing.T) {
@@ -533,7 +533,7 @@ func TestServer_UpdateJobLine_UpdatesOutputFileForCompletedJob(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	outputPath := filepath.Join(showDir, "episode01_ctxtrans.zh.srt")
+	outputPath := filepath.Join(showDir, "episode01.zh.srt")
 	data, err := os.ReadFile(outputPath)
 	require.NoError(t, err)
 	require.Contains(t, string(data), "第一行已改")
