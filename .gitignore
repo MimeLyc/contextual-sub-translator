@@ -63,3 +63,10 @@ findings.md
 ctxtrans
 docker-compose.yml
 progress.md
+
+# Local agent/runtime state and generated application data
+.omx/
+/ctxtrans.db*
+/task_plan.md
+/test.srt
+/*_ctxtrans.srt

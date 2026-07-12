@@ -102,17 +102,7 @@ func (s *transService) enqueueBundle(source string, bundle MediaPathBundle) (*jo
 }
 
 func (s *transService) bundleDedupeKey(bundle MediaPathBundle) string {
-	cfg := s.configSnapshot()
-	subPath := ""
-	if len(bundle.SubtitleFiles) > 0 {
-		subPath = bundle.SubtitleFiles[0]
-	}
-	return fmt.Sprintf(
-		"%s|%s|%s",
-		bundle.MediaFile,
-		subPath,
-		cfg.Translate.TargetLanguage.String(),
-	)
+	return bundle.MediaFile
 }
 
 var singleflightGroup singleflight.Group
@@ -481,6 +471,15 @@ func (s *transService) loadSubtitleForJob(ctx context.Context, job *jobs.Transla
 	if job == nil {
 		return nil, fmt.Errorf("job is nil")
 	}
+	if s.store != nil && job.ID != "" {
+		cacheKey := persistence.JobOriginalSubtitleCacheKey(job.ID)
+		cached, ok, err := s.store.GetSubtitleCache(ctx, cacheKey)
+		if err != nil {
+			log.Error("Failed to load original subtitle snapshot %s: %v", cacheKey, err)
+		} else if ok {
+			return &cached, nil
+		}
+	}
 
 	subtitlePath := job.Payload.SubtitleFile
 	if subtitlePath != "" {
@@ -488,6 +487,7 @@ func (s *transService) loadSubtitleForJob(ctx context.Context, job *jobs.Transla
 		if err != nil {
 			return nil, fmt.Errorf("failed to read subtitle file %s: %w", subtitlePath, err)
 		}
+		s.persistOriginalSubtitleSnapshot(ctx, job, subFile)
 		return subFile, nil
 	}
 
@@ -497,6 +497,7 @@ func (s *transService) loadSubtitleForJob(ctx context.Context, job *jobs.Transla
 		if err != nil {
 			log.Error("Failed to load subtitle cache %s: %v", cacheKey, err)
 		} else if ok {
+			s.persistOriginalSubtitleSnapshot(ctx, job, &cached)
 			return &cached, nil
 		}
 	}
@@ -524,6 +525,7 @@ func (s *transService) loadSubtitleForJob(ctx context.Context, job *jobs.Transla
 				log.Error("Failed to save subtitle cache %s: %v", cacheKey, cacheErr)
 			}
 		}
+		s.persistOriginalSubtitleSnapshot(ctx, job, subFile)
 		return subFile, nil
 	}
 	subFile, err := subtitle.ReadSRTBytes(payload, syntheticSubtitlePath(job.Payload.MediaFile))
@@ -541,7 +543,24 @@ func (s *transService) loadSubtitleForJob(ctx context.Context, job *jobs.Transla
 			log.Error("Failed to save subtitle cache %s: %v", cacheKey, err)
 		}
 	}
+	s.persistOriginalSubtitleSnapshot(ctx, job, subFile)
 	return subFile, nil
+}
+
+func (s *transService) persistOriginalSubtitleSnapshot(ctx context.Context, job *jobs.TranslationJob, subFile *subtitle.File) {
+	if s.store == nil || job == nil || job.ID == "" || subFile == nil {
+		return
+	}
+	cacheKey := persistence.JobOriginalSubtitleCacheKey(job.ID)
+	if err := s.store.PutSubtitleCache(ctx, persistence.SubtitleCacheEntry{
+		CacheKey:  cacheKey,
+		MediaPath: job.Payload.MediaFile,
+		JobID:     job.ID,
+		File:      *subFile,
+		IsTemp:    false,
+	}); err != nil {
+		log.Error("Failed to save original subtitle snapshot %s: %v", cacheKey, err)
+	}
 }
 
 func subtitleCacheKey(mediaPath string) string {
@@ -826,6 +845,11 @@ func getBaseName(filePath string) string {
 	// For subtitle files, strip a trailing language suffix (e.g. ".eng", ".zh-cn")
 	// so "episode.eng.srt" and "episode.zh-cn.srt" map to the same media base.
 	if isSubtitleFile(ext) {
+		if idx := strings.Index(base, "_ctxtrans"); idx >= 0 {
+			if trimmed := strings.TrimRight(base[:idx], "._- "); trimmed != "" {
+				base = trimmed
+			}
+		}
 		if idx := strings.LastIndex(base, "."); idx > 0 {
 			langSuffix := strings.ReplaceAll(base[idx+1:], "_", "-")
 			if looksLikeLanguageSuffix(langSuffix) {

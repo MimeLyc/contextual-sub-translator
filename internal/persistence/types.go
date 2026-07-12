@@ -6,6 +6,10 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 )
 
+func JobOriginalSubtitleCacheKey(jobID string) string {
+	return "job:" + jobID + ":original"
+}
+
 type BatchCheckpoint struct {
 	JobID           string
 	BatchStart      int

@@ -445,6 +445,8 @@ func TestGetBaseName(t *testing.T) {
 	}{
 		{"/path/to/movie.mkv", "movie"},
 		{"/path/to/episode.s01e01.srt", "episode.s01e01"},
+		{"/path/to/episode.s01e01_ctxtrans.srt", "episode.s01e01"},
+		{"/path/to/episode.s01e01_ctxtrans.en.srt", "episode.s01e01"},
 		{"simple.mp4", "simple"},
 		{"/complex/path/with.dots.in.name.avi", "with.dots.in.name"},
 		{"", ""},

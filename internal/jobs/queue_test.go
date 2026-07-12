@@ -28,6 +28,34 @@ func TestQueue_Enqueue_DeduplicatesSameKey(t *testing.T) {
 	assert.Equal(t, jobA.ID, jobB.ID)
 }
 
+func TestQueue_Enqueue_DeduplicatesSameMediaWhileActive(t *testing.T) {
+	q := NewQueue(2, nil)
+
+	jobA, createdA := q.Enqueue(EnqueueRequest{
+		Source:    "manual",
+		DedupeKey: "episode|subtitle-a|zh",
+		Payload: JobPayload{
+			MediaFile:    "/media/episode01.mkv",
+			SubtitleFile: "/media/episode01.eng.srt",
+		},
+	})
+	jobB, createdB := q.Enqueue(EnqueueRequest{
+		Source:    "manual",
+		DedupeKey: "episode|subtitle-b|zh",
+		Payload: JobPayload{
+			MediaFile:    "/media/episode01.mkv",
+			SubtitleFile: "/media/episode01.jpn.srt",
+		},
+	})
+
+	require.True(t, createdA)
+	require.False(t, createdB)
+	require.NotNil(t, jobA)
+	require.NotNil(t, jobB)
+	assert.Equal(t, jobA.ID, jobB.ID)
+	assert.Len(t, q.List(), 1)
+}
+
 func TestQueue_Enqueue_AllowsRetryAfterFailure(t *testing.T) {
 	q := NewQueue(1, nil)
 

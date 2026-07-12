@@ -9,6 +9,7 @@ import (
 	"github.com/MimeLyc/contextual-sub-translator/internal/config"
 	"github.com/MimeLyc/contextual-sub-translator/internal/jobs"
 	"github.com/MimeLyc/contextual-sub-translator/internal/library"
+	"golang.org/x/sync/errgroup"
 )
 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
@@ -59,9 +60,75 @@ func (s *Server) handleListItems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, allItems)
 }
 
+func (s *Server) handleListItemStatuses(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	sourceID := strings.TrimSpace(r.URL.Query().Get("source"))
+	if sourceID == "" {
+		writeError(w, http.StatusBadRequest, "source is required")
+		return
+	}
+	items, err := s.scanner.ScanItems(r.Context(), sourceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jobsByMedia := latestJobsByMedia(s.queue.List())
+	ret := make([]itemStatusSummary, len(items))
+	g, ctx := errgroup.WithContext(r.Context())
+	// A single item scan already probes episodes concurrently. Keeping the outer
+	// limit low prevents collection summaries from flooding a NAS with ffprobe.
+	g.SetLimit(2)
+	for i := range items {
+		index := i
+		item := items[i]
+		g.Go(func() error {
+			episodes, scanErr := s.scanner.ScanEpisodesByItem(ctx, item.ID)
+			if scanErr != nil {
+				return scanErr
+			}
+			ret[index] = summarizeItemStatuses(item.ID, episodes, jobsByMedia)
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ret)
+}
+
+func (s *Server) handleGetItemStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	itemID := strings.TrimSpace(r.URL.Query().Get("item"))
+	if itemID == "" {
+		writeError(w, http.StatusBadRequest, "item is required")
+		return
+	}
+	episodes, err := s.scanner.ScanEpisodesByItem(r.Context(), itemID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summarizeItemStatuses(itemID, episodes, latestJobsByMedia(s.queue.List())))
+}
+
 func (s *Server) handleListEpisodesByItem(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/cover") {
+		s.handleItemCover(w, r)
 		return
 	}
 
@@ -87,16 +154,16 @@ func (s *Server) handleListEpisodesByItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	activeJobsByMedia := inProgressJobsByMedia(s.queue.List())
+	jobsByMedia := latestJobsByMedia(s.queue.List())
 	ret := make([]episodeResponse, 0, len(episodes))
 	for _, episode := range episodes {
 		item := episodeResponse{
 			Episode: episode,
 		}
-		if job, ok := activeJobsByMedia[episode.MediaPath]; ok {
-			item.InProgress = true
+		if job, ok := jobsByMedia[episode.MediaPath]; ok {
 			item.JobStatus = job.Status
 			item.JobSource = job.Source
+			item.InProgress = job.Status == jobs.StatusPending || job.Status == jobs.StatusRunning
 		}
 		ret = append(ret, item)
 	}
@@ -104,6 +171,22 @@ func (s *Server) handleListEpisodesByItem(w http.ResponseWriter, r *http.Request
 		TargetLanguage: s.scanner.TargetLanguage(),
 		Episodes:       ret,
 	})
+}
+
+func (s *Server) handleItemCover(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/library/items/")
+	path = strings.TrimSuffix(strings.TrimSuffix(path, "/"), "/cover")
+	if decoded, err := url.PathUnescape(path); err == nil {
+		path = decoded
+	}
+	coverPath, ok := s.scanner.ItemCoverPath(path)
+	if !ok {
+		writeError(w, http.StatusNotFound, "cover not found")
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeFile(w, r, coverPath)
 }
 
 type episodesListResponse struct {
@@ -118,41 +201,64 @@ type episodeResponse struct {
 	JobSource  string      `json:"job_source,omitempty"`
 }
 
-func inProgressJobsByMedia(jobList []*jobs.TranslationJob) map[string]*jobs.TranslationJob {
+type itemStatusSummary struct {
+	ItemID      string `json:"item_id"`
+	Total       int    `json:"total"`
+	NoNeed      int    `json:"no_need"`
+	Idle        int    `json:"idle"`
+	Pending     int    `json:"pending"`
+	Translating int    `json:"translating"`
+	Failed      int    `json:"failed"`
+	Skipped     int    `json:"skipped"`
+	NoSource    int    `json:"no_source"`
+}
+
+func summarizeItemStatuses(itemID string, episodes []library.Episode, jobsByMedia map[string]*jobs.TranslationJob) itemStatusSummary {
+	ret := itemStatusSummary{ItemID: itemID, Total: len(episodes)}
+	for _, episode := range episodes {
+		job := jobsByMedia[episode.MediaPath]
+		switch {
+		case episode.Subtitles.HasTargetSubtitle || (job != nil && job.Status == jobs.StatusSuccess):
+			ret.NoNeed++
+		case !episode.Subtitles.HasSourceSubtitle:
+			ret.NoSource++
+		case job != nil && job.Status == jobs.StatusPending:
+			ret.Pending++
+		case job != nil && job.Status == jobs.StatusRunning:
+			ret.Translating++
+		case job != nil && job.Status == jobs.StatusFailed:
+			ret.Failed++
+		case job != nil && job.Status == jobs.StatusSkipped:
+			ret.Skipped++
+		default:
+			ret.Idle++
+		}
+	}
+	return ret
+}
+
+func latestJobsByMedia(jobList []*jobs.TranslationJob) map[string]*jobs.TranslationJob {
 	ret := make(map[string]*jobs.TranslationJob)
 	for _, job := range jobList {
 		if job == nil || job.Payload.MediaFile == "" {
 			continue
 		}
-		if job.Status != jobs.StatusPending && job.Status != jobs.StatusRunning {
-			continue
-		}
 		existing, ok := ret[job.Payload.MediaFile]
-		if !ok || preferInProgressJob(job, existing) {
+		if !ok || preferLatestJob(job, existing) {
 			ret[job.Payload.MediaFile] = job
 		}
 	}
 	return ret
 }
 
-func preferInProgressJob(next, current *jobs.TranslationJob) bool {
-	nextRank := inProgressRank(next.Status)
-	currentRank := inProgressRank(current.Status)
-	if nextRank != currentRank {
-		return nextRank > currentRank
+func preferLatestJob(next, current *jobs.TranslationJob) bool {
+	if !next.UpdatedAt.Equal(current.UpdatedAt) {
+		return next.UpdatedAt.After(current.UpdatedAt)
 	}
-	return next.UpdatedAt.After(current.UpdatedAt)
-}
-
-func inProgressRank(status jobs.Status) int {
-	switch status {
-	case jobs.StatusRunning:
-		return 2
-	case jobs.StatusPending:
-		return 1
-	default:
-		return 0
+	if !next.CreatedAt.Equal(current.CreatedAt) {
+		return next.CreatedAt.After(current.CreatedAt)
 	}
+	return next.ID > current.ID
 }
 
 type enqueueJobRequest struct {
@@ -180,13 +286,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "media_path is required")
 			return
 		}
-		if req.DedupeKey == "" {
-			keySuffix := req.SubtitlePath
-			if keySuffix == "" {
-				keySuffix = "[embedded]"
-			}
-			req.DedupeKey = req.MediaPath + "|" + keySuffix
-		}
+		req.DedupeKey = req.MediaPath
 
 		job, created := s.queue.Enqueue(jobs.EnqueueRequest{
 			Source:    req.Source,
