@@ -443,6 +443,91 @@ func TestScanner_ScanItems(t *testing.T) {
 	assert.Equal(t, "tvshows|"+showDir, items[0].ID)
 }
 
+func TestScanner_ScanItems_IncludesFilesystemAddedAndUpdatedTimes(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "tvshows")
+	showDir := filepath.Join(sourcePath, "The Show")
+	require.NoError(t, os.MkdirAll(showDir, 0o755))
+
+	addedAt := time.Now().Add(-72 * time.Hour).Truncate(time.Second)
+	laterMediaAt := addedAt.Add(24 * time.Hour)
+	updatedAt := addedAt.Add(48 * time.Hour)
+	firstMedia := filepath.Join(showDir, "episode01.mkv")
+	secondMedia := filepath.Join(showDir, "episode02.mkv")
+	subtitle := filepath.Join(showDir, "episode02.zh.srt")
+	require.NoError(t, os.WriteFile(firstMedia, []byte("media"), 0o644))
+	require.NoError(t, os.WriteFile(secondMedia, []byte("media"), 0o644))
+	require.NoError(t, os.WriteFile(subtitle, []byte("subtitle"), 0o644))
+	require.NoError(t, os.Chtimes(firstMedia, addedAt, addedAt))
+	require.NoError(t, os.Chtimes(secondMedia, laterMediaAt, laterMediaAt))
+	require.NoError(t, os.Chtimes(subtitle, updatedAt, updatedAt))
+
+	scanner := NewScanner(
+		[]SourceConfig{{ID: "tvshows", Name: "TV Shows", Path: sourcePath}},
+		language.Chinese,
+	)
+
+	items, err := scanner.ScanItems(context.Background(), "tvshows")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.WithinDuration(t, addedAt, items[0].AddedAt, time.Second)
+	assert.WithinDuration(t, updatedAt, items[0].UpdatedAt, time.Second)
+}
+
+func TestScanner_ItemCoverPath_PrefersPosterAndStaysWithinSource(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "tvshows")
+	showDir := filepath.Join(sourcePath, "The Show")
+	require.NoError(t, os.MkdirAll(showDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(showDir, "episode01.mkv"), []byte("media"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(showDir, "folder.jpg"), []byte("folder"), 0o644))
+	posterPath := filepath.Join(showDir, "poster.png")
+	require.NoError(t, os.WriteFile(posterPath, []byte("poster"), 0o644))
+
+	scanner := NewScanner(
+		[]SourceConfig{{ID: "tvshows", Name: "TV Shows", Path: sourcePath}},
+		language.Chinese,
+	)
+
+	got, ok := scanner.ItemCoverPath("tvshows|" + showDir)
+	require.True(t, ok)
+	assert.Equal(t, posterPath, got)
+
+	_, ok = scanner.ItemCoverPath("tvshows|" + filepath.Join(sourcePath, "..", "outside"))
+	assert.False(t, ok)
+
+	outsideDir := filepath.Join(tmp, "outside")
+	require.NoError(t, os.MkdirAll(outsideDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outsideDir, "poster.jpg"), []byte("outside"), 0o644))
+	symlinkPath := filepath.Join(sourcePath, "linked-outside")
+	require.NoError(t, os.Symlink(outsideDir, symlinkPath))
+	_, ok = scanner.ItemCoverPath("tvshows|" + symlinkPath)
+	assert.False(t, ok)
+}
+
+func TestScanner_DescribeMediaPath_UsesSeriesAndSeasonWithoutLibraryScan(t *testing.T) {
+	tmp := t.TempDir()
+	sourcePath := filepath.Join(tmp, "animations")
+	showDir := filepath.Join(sourcePath, "The Show")
+	seasonDir := filepath.Join(showDir, "Season 2")
+	mediaPath := filepath.Join(seasonDir, "The Show - S02E03 - Arrival WEBDL-1080p.mkv")
+	require.NoError(t, os.MkdirAll(seasonDir, 0o755))
+	require.NoError(t, os.WriteFile(mediaPath, []byte("media"), 0o644))
+
+	scanner := NewScanner(
+		[]SourceConfig{{ID: "animations", Name: "Animations", Path: sourcePath}},
+		language.Chinese,
+	)
+
+	episode, seriesName, ok := scanner.DescribeMediaPath(mediaPath)
+	require.True(t, ok)
+	assert.Equal(t, "animations", episode.SourceID)
+	assert.Equal(t, "animations|"+showDir, episode.ItemID)
+	assert.Equal(t, "Season 2", episode.Season)
+	assert.Equal(t, "E03 Arrival", episode.Name)
+	assert.Equal(t, "The Show", seriesName)
+}
+
 func TestScanner_ScanItems_UnknownSource(t *testing.T) {
 	scanner := NewScanner(
 		[]SourceConfig{

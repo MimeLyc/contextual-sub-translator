@@ -50,22 +50,23 @@ func NewQueue(workerCount int, store Store) *Queue {
 
 func (q *Queue) Enqueue(req EnqueueRequest) (*TranslationJob, bool) {
 	now := time.Now()
+	dedupeKey := normalizedDedupeKey(req.DedupeKey, req.Payload.MediaFile)
 
 	q.mu.Lock()
-	if id, ok := q.dedupe[req.DedupeKey]; ok {
+	if id, ok := q.dedupe[dedupeKey]; ok {
 		if existing, exists := q.jobs[id]; exists {
 			snapshot := cloneJob(existing)
 			q.mu.Unlock()
 			return snapshot, false
 		}
-		delete(q.dedupe, req.DedupeKey)
+		delete(q.dedupe, dedupeKey)
 	}
 
 	id := fmt.Sprintf("job-%d", atomic.AddUint64(&q.idCounter, 1))
 	job := &TranslationJob{
 		ID:        id,
 		Source:    req.Source,
-		DedupeKey: req.DedupeKey,
+		DedupeKey: dedupeKey,
 		Payload:   req.Payload,
 		Status:    StatusPending,
 		CreatedAt: now,
@@ -73,8 +74,8 @@ func (q *Queue) Enqueue(req EnqueueRequest) (*TranslationJob, bool) {
 	}
 
 	q.jobs[id] = job
-	if req.DedupeKey != "" {
-		q.dedupe[req.DedupeKey] = id
+	if dedupeKey != "" {
+		q.dedupe[dedupeKey] = id
 	}
 	started := q.started
 	snapshot := cloneJob(job)
@@ -330,10 +331,22 @@ func (q *Queue) hydrateFromStore(ctx context.Context) {
 			job.UpdatedAt = now
 			toPersist = append(toPersist, cloneJob(job))
 		}
-		q.jobs[job.ID] = job
 		if (job.Status == StatusPending || job.Status == StatusRunning) && job.DedupeKey != "" {
-			q.dedupe[job.DedupeKey] = job.ID
+			normalizedKey := normalizedDedupeKey(job.DedupeKey, job.Payload.MediaFile)
+			if normalizedKey != job.DedupeKey {
+				job.DedupeKey = normalizedKey
+				toPersist = append(toPersist, cloneJob(job))
+			}
+			if _, exists := q.dedupe[job.DedupeKey]; exists {
+				job.Status = StatusSkipped
+				job.Error = "skipped duplicate active job for media"
+				job.UpdatedAt = now
+				toPersist = append(toPersist, cloneJob(job))
+			} else {
+				q.dedupe[job.DedupeKey] = job.ID
+			}
 		}
+		q.jobs[job.ID] = job
 		q.updateIDCounterLocked(job.ID)
 	}
 	q.mu.Unlock()
@@ -363,6 +376,13 @@ func (q *Queue) persistJob(job *TranslationJob) {
 	if err := q.store.UpsertJob(context.Background(), job); err != nil {
 		log.Error("Failed to persist job %s: %v", job.ID, err)
 	}
+}
+
+func normalizedDedupeKey(key string, mediaFile string) string {
+	if media := strings.TrimSpace(mediaFile); media != "" {
+		return media
+	}
+	return strings.TrimSpace(key)
 }
 
 func cloneJob(job *TranslationJob) *TranslationJob {

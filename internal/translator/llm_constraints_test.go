@@ -1,9 +1,12 @@
 package translator
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,14 +79,66 @@ func TestFixInlineBreakers_MultipleLines(t *testing.T) {
 		"x%%inline_breaker%%y%%inline_breaker%%z",
 	}
 	translated := []string{
-		"甲乙",                                   // missing 1
-		"没有换行%%inline_breaker%%多了",          // extra 1
+		"甲乙",                       // missing 1
+		"没有换行%%inline_breaker%%多了", // extra 1
 		"一%%inline_breaker%%二%%inline_breaker%%三", // correct
 	}
 	fixInlineBreakers(source, translated)
 	assert.Equal(t, 1, strings.Count(translated[0], "%%inline_breaker%%"))
 	assert.Equal(t, 0, strings.Count(translated[1], "%%inline_breaker%%"))
 	assert.Equal(t, 2, strings.Count(translated[2], "%%inline_breaker%%"))
+}
+
+func TestBatchTranslateWithFallbackSplitsOnTranslateError(t *testing.T) {
+	t.Parallel()
+
+	lines := make([]subtitle.Line, 50)
+	for i := range lines {
+		lines[i] = subtitle.Line{
+			Index: 51 + i,
+			Text:  fmt.Sprintf("source line %d\nwrapped", i+1),
+		}
+	}
+
+	var callSizes []int
+	translate := func(
+		_ context.Context,
+		_ MediaMeta,
+		subtitleTexts []string,
+		_ string,
+		_ string,
+	) ([]string, error) {
+		callSizes = append(callSizes, len(subtitleTexts))
+		if len(subtitleTexts) > 25 {
+			return nil, fmt.Errorf("translation validation failed after repair retry: unsupported translation json schema")
+		}
+
+		translations := make([]string, len(subtitleTexts))
+		for i, text := range subtitleTexts {
+			require.NotContains(t, text, "\n")
+			require.Contains(t, text, inlineBreakerPlaceholder)
+			translations[i] = fmt.Sprintf("译文 %02d", i+1)
+		}
+		return translations, nil
+	}
+
+	got, err := batchTranslateWithFallback(
+		context.Background(),
+		MediaMeta{},
+		lines,
+		"English",
+		"Chinese",
+		50,
+		0,
+		len(lines),
+		translate,
+	)
+	require.NoError(t, err)
+	require.Len(t, got, len(lines))
+	assert.Equal(t, []int{50, 25, 25}, callSizes)
+	assert.Equal(t, "译文 01", got[0])
+	assert.Equal(t, "译文 25", got[24])
+	assert.Equal(t, "译文 25", got[49])
 }
 
 func TestValidateTermMappings_MissingMappedTarget(t *testing.T) {

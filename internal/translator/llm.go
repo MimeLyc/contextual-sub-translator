@@ -3,9 +3,13 @@ package translator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"html"
+	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +21,12 @@ import (
 )
 
 var properNounPattern = regexp.MustCompile(`\b[A-Z][A-Za-z0-9'’-]*(?:\s+[A-Z][A-Za-z0-9'’-]*)*\b`)
+
+var (
+	htmlCommentPattern   = regexp.MustCompile(`(?s)<!--.*?-->`)
+	htmlLineBreakPattern = regexp.MustCompile(`(?i)<\s*(?:br\s*/?|/p|/div)\s*>`)
+	htmlTagPattern       = regexp.MustCompile(`(?is)</?[a-z][^>]*>`)
+)
 
 var ignoredProperNouns = map[string]struct{}{
 	"a":    {},
@@ -190,8 +200,46 @@ func (t *agentTranslator) batchTranslate(
 	startIncluded int,
 	endExcluded int,
 ) ([]string, error) {
+	return batchTranslateWithFallback(
+		ctx,
+		media,
+		subtitleLines,
+		sourceLanguage,
+		targetLanguage,
+		batchSize,
+		startIncluded,
+		endExcluded,
+		t.Translate,
+	)
+}
+
+type translateBatchFunc func(
+	ctx context.Context,
+	media MediaMeta,
+	subtitleTexts []string,
+	sourceLanguage string,
+	targetLanguage string,
+) ([]string, error)
+
+func batchTranslateWithFallback(
+	ctx context.Context,
+	media MediaMeta,
+	subtitleLines []subtitle.Line,
+	sourceLanguage string,
+	targetLanguage string,
+	batchSize int,
+	startIncluded int,
+	endExcluded int,
+	translate translateBatchFunc,
+) ([]string, error) {
 	if batchSize <= 0 {
 		return nil, fmt.Errorf("batch size must be greater than 0")
+	}
+	if translate == nil {
+		return nil, fmt.Errorf("translate function must not be nil")
+	}
+	if startIncluded < 0 || endExcluded < startIncluded || endExcluded > len(subtitleLines) {
+		return nil, fmt.Errorf("invalid batch range %d-%d for %d subtitle lines", startIncluded, endExcluded, len(subtitleLines))
 	}
 
 	var allTranslations []string
@@ -199,6 +247,7 @@ func (t *agentTranslator) batchTranslate(
 	for i := startIncluded; i < endExcluded; i += batchSize {
 		batchStart := time.Now()
 		end := min(i+batchSize, endExcluded, len(subtitleLines))
+		lineStart, lineEnd := subtitleLineRange(subtitleLines, i, end)
 
 		batch := subtitleLines[i:end]
 
@@ -209,35 +258,62 @@ func (t *agentTranslator) batchTranslate(
 			subtitleTexts = append(subtitleTexts, formattedText)
 		}
 
-		translations, err := t.Translate(ctx, media, subtitleTexts, sourceLanguage, targetLanguage)
+		translations, err := translate(ctx, media, subtitleTexts, sourceLanguage, targetLanguage)
 		if err != nil {
-			return nil, fmt.Errorf("batch translation failed for lines %d-%d: %w", i+1, end, err)
+			if len(subtitleTexts) == 1 {
+				return nil, fmt.Errorf("batch translation failed for lines %d-%d: %w", lineStart, lineEnd, err)
+			}
+			nextBatchSize := nextFallbackBatchSize(len(subtitleTexts))
+			log.Warn("batch translation failed for lines %d-%d: %v; retrying with batch size %d", lineStart, lineEnd, err, nextBatchSize)
+			if translations, err = batchTranslateWithFallback(ctx, media, subtitleLines, sourceLanguage, targetLanguage, nextBatchSize, i, end, translate); err != nil {
+				return nil, fmt.Errorf("retry batch translation failed for lines %d-%d: %w", lineStart, lineEnd, err)
+			}
 		}
 
 		if len(translations) != len(subtitleTexts) {
 			if len(subtitleTexts) == 1 {
 				if len(translations) == 0 {
-					return nil, fmt.Errorf("single-line translation returned no content for line %d", i+1)
+					return nil, fmt.Errorf("single-line translation returned no content for line %d", lineStart)
 				}
-				log.Warn("Single-line translation count mismatch at line %d: expected 1, got %d; using first candidate", i+1, len(translations))
+				log.Warn("Single-line translation count mismatch at line %d: expected 1, got %d; using first candidate", lineStart, len(translations))
 				translations = []string{translations[0]}
 			} else {
-				nextBatchSize := max(batchSize/2, 1)
-				if nextBatchSize == batchSize {
-					return nil, fmt.Errorf("translation count mismatch for lines %d-%d: expected %d, got %d", i+1, end, len(subtitleTexts), len(translations))
+				nextBatchSize := nextFallbackBatchSize(len(subtitleTexts))
+				if nextBatchSize >= len(subtitleTexts) {
+					return nil, fmt.Errorf("translation count mismatch for lines %d-%d: expected %d, got %d", lineStart, lineEnd, len(subtitleTexts), len(translations))
 				}
-				log.Warn("batch translation count mismatch for lines %d-%d: expected %d, got %d; retrying with batch size %d", i+1, end, len(subtitleTexts), len(translations), nextBatchSize)
-				if translations, err = t.batchTranslate(ctx, media, subtitleLines, sourceLanguage, targetLanguage, nextBatchSize, i, end); err != nil {
-					return nil, fmt.Errorf("retry batch translation failed for lines %d-%d: %w", i+1, end, err)
+				log.Warn("batch translation count mismatch for lines %d-%d: expected %d, got %d; retrying with batch size %d", lineStart, lineEnd, len(subtitleTexts), len(translations), nextBatchSize)
+				if translations, err = batchTranslateWithFallback(ctx, media, subtitleLines, sourceLanguage, targetLanguage, nextBatchSize, i, end, translate); err != nil {
+					return nil, fmt.Errorf("retry batch translation failed for lines %d-%d: %w", lineStart, lineEnd, err)
 				}
 			}
 		}
 
 		allTranslations = append(allTranslations, translations...)
-		log.Debug("Batch translated lines %d-%d in %s (size=%d)", i+1, end, time.Since(batchStart), len(subtitleTexts))
+		log.Debug("Batch translated lines %d-%d in %s (size=%d)", lineStart, lineEnd, time.Since(batchStart), len(subtitleTexts))
 	}
 
 	return allTranslations, nil
+}
+
+func nextFallbackBatchSize(currentBatchSize int) int {
+	if currentBatchSize <= 1 {
+		return 1
+	}
+	return max(currentBatchSize/2, 1)
+}
+
+func subtitleLineRange(lines []subtitle.Line, startIncluded int, endExcluded int) (int, int) {
+	start := startIncluded + 1
+	end := endExcluded
+	if startIncluded >= 0 && startIncluded < len(lines) && lines[startIncluded].Index > 0 {
+		start = lines[startIncluded].Index
+	}
+	last := endExcluded - 1
+	if last >= 0 && last < len(lines) && lines[last].Index > 0 {
+		end = lines[last].Index
+	}
+	return start, end
 }
 
 // buildContextPrompt builds the system prompt for translation.
@@ -314,6 +390,7 @@ func (t *agentTranslator) buildContextPrompt(
 	prompt.WriteString("6. Do NOT merge, split, reorder, or drop lines\n")
 	prompt.WriteString("7. If an input line is empty, output text for that index MUST be an empty string\n")
 	prompt.WriteString("8. Priority for proper nouns and terms: TERM MAPPINGS > official localized names > transliteration\n")
+	prompt.WriteString("9. Output plain subtitle text only; remove HTML/XML tags and do not add markup\n")
 
 	prompt.WriteString("\n=== OUTPUT FORMAT ===\n")
 	prompt.WriteString("Return ONLY a valid JSON array of objects.\n")
@@ -355,6 +432,37 @@ type translationOutputLine struct {
 	Text  string `json:"text"`
 }
 
+var errUnsupportedTranslationSchema = errors.New("unsupported translation json schema")
+
+var translationWrapperFields = []string{
+	"translations",
+	"translation",
+	"lines",
+	"translated_lines",
+	"translated_texts",
+	"results",
+	"items",
+	"output",
+}
+
+var translationIndexFields = []string{
+	"index",
+	"line",
+	"line_index",
+	"line_number",
+	"id",
+	"number",
+}
+
+var translationTextFields = []string{
+	"text",
+	"translation",
+	"translated",
+	"translated_text",
+	"content",
+	"value",
+}
+
 func parseTranslationOutput(content string, expectedCount int) ([]string, error) {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
@@ -387,36 +495,188 @@ func parseTranslationOutput(content string, expectedCount int) ([]string, error)
 }
 
 func parseJSONTranslations(content string, expectedCount int) ([]string, error) {
-	var indexed []translationOutputLine
-	if err := json.Unmarshal([]byte(content), &indexed); err == nil {
+	rawContent := []byte(content)
+
+	translations, err := parseTranslationContainer(rawContent, expectedCount)
+	if err == nil {
+		return translations, nil
+	}
+	if !errors.Is(err, errUnsupportedTranslationSchema) {
+		return nil, err
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(rawContent, &object); err == nil {
+		for _, field := range translationWrapperFields {
+			if raw, ok := lookupRawField(object, field); ok {
+				translations, err := parseTranslationContainer(raw, expectedCount)
+				if err != nil {
+					return nil, fmt.Errorf("unsupported %s schema: %w", field, err)
+				}
+				return translations, nil
+			}
+		}
+	}
+
+	return nil, errUnsupportedTranslationSchema
+}
+
+func parseTranslationContainer(raw []byte, expectedCount int) ([]string, error) {
+	indexed, indexedErr := parseIndexedTranslationLines(raw)
+	if indexedErr == nil {
 		return reorderIndexedTranslations(indexed, expectedCount)
 	}
 
 	var list []string
-	if err := json.Unmarshal([]byte(content), &list); err == nil {
+	if err := json.Unmarshal(raw, &list); err == nil {
 		if err := validateExpectedLineCount(list, expectedCount); err != nil {
 			return nil, err
 		}
 		return list, nil
 	}
 
-	var object struct {
-		Translations []string                `json:"translations"`
-		Lines        []translationOutputLine `json:"lines"`
+	if isTopLevelJSONKind(raw, '[') {
+		return nil, indexedErr
 	}
-	if err := json.Unmarshal([]byte(content), &object); err == nil {
-		if object.Lines != nil {
-			return reorderIndexedTranslations(object.Lines, expectedCount)
+
+	indexed, numericErr := parseNumericKeyedTranslations(raw)
+	if numericErr == nil {
+		return reorderIndexedTranslations(indexed, expectedCount)
+	}
+	if !errors.Is(numericErr, errUnsupportedTranslationSchema) {
+		return nil, numericErr
+	}
+
+	return nil, errUnsupportedTranslationSchema
+}
+
+func parseIndexedTranslationLines(raw []byte) ([]translationOutputLine, error) {
+	var items []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, err
+	}
+
+	lines := make([]translationOutputLine, 0, len(items))
+	for i, item := range items {
+		indexRaw, ok := lookupRawField(item, translationIndexFields...)
+		if !ok {
+			return nil, fmt.Errorf("translation item %d index: missing required field", i+1)
 		}
-		if object.Translations != nil {
-			if err := validateExpectedLineCount(object.Translations, expectedCount); err != nil {
-				return nil, err
-			}
-			return object.Translations, nil
+		index, err := parseTranslationIndex(indexRaw)
+		if err != nil {
+			return nil, fmt.Errorf("translation item %d index: %w", i+1, err)
+		}
+		textRaw, ok := lookupRawField(item, translationTextFields...)
+		if !ok {
+			return nil, fmt.Errorf("translation item %d text: missing required field", i+1)
+		}
+		text, err := parseTranslationText(textRaw)
+		if err != nil {
+			return nil, fmt.Errorf("translation item %d text: %w", i+1, err)
+		}
+		lines = append(lines, translationOutputLine{Index: index, Text: text})
+	}
+	return lines, nil
+}
+
+func parseNumericKeyedTranslations(raw []byte) ([]translationOutputLine, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, errUnsupportedTranslationSchema
+	}
+	if len(object) == 0 {
+		return nil, errUnsupportedTranslationSchema
+	}
+
+	lines := make([]translationOutputLine, 0, len(object))
+	for key, rawText := range object {
+		index, err := strconv.Atoi(strings.TrimSpace(key))
+		if err != nil {
+			return nil, errUnsupportedTranslationSchema
+		}
+		text, err := parseTranslationText(rawText)
+		if err != nil {
+			return nil, fmt.Errorf("translation key %q text: %w", key, err)
+		}
+		lines = append(lines, translationOutputLine{Index: index, Text: text})
+	}
+	return lines, nil
+}
+
+func isTopLevelJSONKind(raw []byte, kind byte) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return len(trimmed) > 0 && trimmed[0] == kind
+}
+
+func lookupRawField(fields map[string]json.RawMessage, names ...string) (json.RawMessage, bool) {
+	for _, name := range names {
+		if raw, ok := fields[name]; ok {
+			return raw, true
 		}
 	}
 
-	return nil, fmt.Errorf("unsupported translation json schema")
+	for key, raw := range fields {
+		normalizedKey := normalizeJSONFieldName(key)
+		for _, name := range names {
+			if normalizedKey == normalizeJSONFieldName(name) {
+				return raw, true
+			}
+		}
+	}
+
+	return nil, false
+}
+
+func normalizeJSONFieldName(name string) string {
+	name = strings.ToLower(name)
+	name = strings.ReplaceAll(name, "_", "")
+	name = strings.ReplaceAll(name, "-", "")
+	return name
+}
+
+func parseTranslationIndex(raw json.RawMessage) (int, error) {
+	if len(raw) == 0 {
+		return 0, fmt.Errorf("missing required field")
+	}
+
+	var index int
+	if err := json.Unmarshal(raw, &index); err == nil {
+		return index, nil
+	}
+
+	var indexString string
+	if err := json.Unmarshal(raw, &indexString); err == nil {
+		parsed, err := strconv.Atoi(strings.TrimSpace(indexString))
+		if err != nil {
+			return 0, fmt.Errorf("must be an integer: %q", indexString)
+		}
+		return parsed, nil
+	}
+
+	var indexFloat float64
+	if err := json.Unmarshal(raw, &indexFloat); err == nil {
+		if math.Trunc(indexFloat) != indexFloat {
+			return 0, fmt.Errorf("must be an integer: %v", indexFloat)
+		}
+		return int(indexFloat), nil
+	}
+
+	return 0, fmt.Errorf("must be an integer")
+}
+
+func parseTranslationText(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", fmt.Errorf("missing required field")
+	}
+	if strings.TrimSpace(string(raw)) == "null" {
+		return "", nil
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return "", fmt.Errorf("must be a string: %w", err)
+	}
+	return text, nil
 }
 
 func reorderIndexedTranslations(lines []translationOutputLine, expectedCount int) ([]string, error) {
@@ -585,9 +845,23 @@ func validateTermMappings(sourceLines []string, translatedLines []string, termMa
 func normalizeTranslatedLines(lines []string) []string {
 	normalized := make([]string, 0, len(lines))
 	for _, line := range lines {
-		normalized = append(normalized, strings.ReplaceAll(line, inlineBreakerPlaceholder, "\n"))
+		normalized = append(normalized, sanitizeTranslatedText(line))
 	}
 	return normalized
+}
+
+func sanitizeTranslatedText(text string) string {
+	text = html.UnescapeString(text)
+	text = htmlCommentPattern.ReplaceAllString(text, "")
+	text = htmlLineBreakPattern.ReplaceAllString(text, "\n")
+	text = htmlTagPattern.ReplaceAllString(text, "")
+	text = strings.ReplaceAll(text, inlineBreakerPlaceholder, "\n")
+
+	parts := strings.Split(text, "\n")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
 func buildRepairUserMessage(originalUserMessage string, previousOutput string, validationErr error, expectedCount int) string {
@@ -608,6 +882,7 @@ func buildRepairUserMessage(originalUserMessage string, previousOutput string, v
 	builder.WriteString(fmt.Sprintf("Each index from 1 to %d must appear exactly once.\n", expectedCount))
 	builder.WriteString("Preserve all required term mappings and inline break markers exactly.\n")
 	builder.WriteString("Do NOT merge/split lines and do NOT output literal newlines in text; use " + inlineBreakerPlaceholder + " only.\n")
+	builder.WriteString("Return plain subtitle text only; remove HTML/XML tags and do not add markup.\n")
 	return builder.String()
 }
 

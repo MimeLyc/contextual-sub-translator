@@ -1,10 +1,15 @@
 <template>
   <section class="panel">
     <div class="panel-head">
-      <div class="breadcrumb">
-        <router-link class="breadcrumb-link" to="/">Library</router-link>
-        <span class="breadcrumb-sep">/</span>
-        <span>{{ seriesName }}</span>
+      <div class="title-block">
+        <div class="breadcrumb">
+          <RouterLink class="breadcrumb-link" to="/library">Library</RouterLink>
+          <span class="breadcrumb-sep">/</span>
+          <RouterLink class="breadcrumb-link" :to="sourceRoute">{{ sourceName }}</RouterLink>
+          <span class="breadcrumb-sep">/</span>
+          <span>{{ seriesName }}</span>
+        </div>
+        <p>Select idle episodes to add them to the translation queue.</p>
       </div>
       <div class="row-gap">
         <button class="btn" @click="refresh">Reload</button>
@@ -14,37 +19,64 @@
       </div>
     </div>
 
-    <p v-if="message" class="settings-message">{{ message }}</p>
+    <p v-if="message" class="settings-message" role="status" aria-live="polite">{{ message }}</p>
 
-    <div class="episode-list">
-      <template v-for="group in seasonGroups" :key="group.season">
-        <h3 v-if="showSeasonHeadings" class="season-heading">{{ group.label }}</h3>
-        <label v-for="ep in group.episodes" :key="ep.id" class="episode-row">
-          <input
-            v-model="selectedEpisodeIds"
-            type="checkbox"
-            :value="ep.id"
-            :disabled="!ep.translatable || !!ep.in_progress"
-          />
-          <div class="episode-main">
-            <div class="episode-title">{{ ep.name }}</div>
-          </div>
-          <div class="status-col">
-            <span class="chip" :class="statusClass(ep)">{{ statusLabel(ep) }}</span>
-          </div>
-          <div class="lang-col" :title="langTooltip(ep)">
-            <template v-if="langList(ep).length > 0">
-              <span
-                v-for="lang in langList(ep)"
-                :key="lang"
-                class="lang-tag"
-                :class="langClass(lang)"
-              >{{ lang }}</span>
-            </template>
-            <span v-else class="no-subs">No subtitles</span>
-          </div>
-        </label>
-      </template>
+    <div class="table-shell">
+      <table class="episode-table">
+        <thead>
+          <tr>
+            <th class="select-cell">
+              <input
+                type="checkbox"
+                aria-label="Select all translatable episodes"
+                :checked="allSelectableSelected"
+                :indeterminate="someSelectableSelected"
+                :disabled="selectableEpisodes.length === 0"
+                @change="toggleSelectAll"
+              />
+            </th>
+            <th>Episode</th>
+            <th>Status</th>
+            <th>Subtitles</th>
+          </tr>
+        </thead>
+        <tbody v-for="group in seasonGroups" :key="group.season">
+          <tr v-if="showSeasonHeadings" class="season-row">
+            <th colspan="4">{{ group.label }}</th>
+          </tr>
+          <tr v-for="ep in group.episodes" :key="ep.id" :class="{ selected: selectedEpisodeIds.includes(ep.id) }">
+            <td class="select-cell">
+              <input
+                v-model="selectedEpisodeIds"
+                type="checkbox"
+                :value="ep.id"
+                :aria-label="`Select ${ep.name}`"
+                :disabled="!canTranslate(ep)"
+              />
+            </td>
+            <td>
+              <div class="episode-title">{{ ep.name }}</div>
+              <div class="episode-path">{{ mediaFileName(ep.media_path) }}</div>
+            </td>
+            <td>
+              <span class="chip" :class="statusClass(ep)">{{ statusLabel(ep) }}</span>
+            </td>
+            <td>
+              <div class="lang-col" :title="langTooltip(ep)">
+                <template v-if="langList(ep).length > 0">
+                  <span
+                    v-for="lang in langList(ep)"
+                    :key="lang"
+                    class="lang-tag"
+                    :class="langClass(lang)"
+                  >{{ lang }}</span>
+                </template>
+                <span v-else class="no-subs">No subtitles</span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </section>
 </template>
@@ -52,7 +84,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
-import { createJob, listEpisodes, type Episode } from "../api";
+import { createJob, listEpisodes, listSources, type Episode } from "../api";
 
 const EPISODE_REFRESH_INTERVAL_MS = 30_000;
 
@@ -61,6 +93,13 @@ const episodes = ref<Episode[]>([]);
 const targetLanguage = ref("");
 const selectedEpisodeIds = ref<string[]>([]);
 const selectedCount = computed(() => selectedEpisodeIds.value.length);
+const selectableEpisodes = computed(() => episodes.value.filter(canTranslate));
+const allSelectableSelected = computed(() => {
+  return selectableEpisodes.value.length > 0 && selectableEpisodes.value.every((ep) => selectedEpisodeIds.value.includes(ep.id));
+});
+const someSelectableSelected = computed(() => {
+  return !allSelectableSelected.value && selectableEpisodes.value.some((ep) => selectedEpisodeIds.value.includes(ep.id));
+});
 const submitting = ref(false);
 const message = ref("");
 const submitButtonLabel = computed(() => {
@@ -72,13 +111,16 @@ const submitButtonLabel = computed(() => {
 let refreshTimer: number | null = null;
 let refreshing = false;
 
+const decodedItemId = computed(() => decodeURIComponent(route.params.itemId as string));
+const itemIdParts = computed(() => decodedItemId.value.split("|"));
+const sourceId = computed(() => itemIdParts.value.length > 1 ? itemIdParts.value[0] : "");
+const sourceRoute = computed(() => sourceId.value ? `/library/${encodeURIComponent(sourceId.value)}` : "/library");
+const sourceName = ref(humanizeSourceId(sourceId.value));
+
 const seriesName = computed(() => {
-  const rawItemId = route.params.itemId as string;
-  const decoded = decodeURIComponent(rawItemId);
-  const parts = decoded.split("|");
-  const path = parts.length > 1 ? parts[1] : decoded;
+  const path = itemIdParts.value.length > 1 ? itemIdParts.value.slice(1).join("|") : decodedItemId.value;
   const segments = path.split("/").filter(Boolean);
-  return segments.length > 0 ? segments[segments.length - 1] : decoded;
+  return segments.length > 0 ? segments[segments.length - 1] : decodedItemId.value;
 });
 
 interface SeasonGroup {
@@ -119,17 +161,38 @@ const showSeasonHeadings = computed(() => {
 });
 
 function statusLabel(ep: Episode): string {
+  if (ep.subtitles.has_target_subtitle || ep.job_status === "success") return "No Need";
   if (!ep.subtitles.has_source_subtitle) return "No Source";
-  if (ep.in_progress) return ep.job_source === "cron" ? "Cron Translating" : "Translating";
-  if (ep.subtitles.has_target_subtitle) return "Translated";
-  return "Pending";
+  if (ep.job_status === "pending") return "Pending";
+  if (ep.job_status === "running") return "Translating";
+  if (ep.job_status === "failed") return "Failed";
+  if (ep.job_status === "skipped") return "Skipped";
+  return "Idle";
 }
 
 function statusClass(ep: Episode): string {
-  if (!ep.subtitles.has_source_subtitle) return "bad";
-  if (ep.in_progress) return "warn";
-  if (ep.subtitles.has_target_subtitle) return "ok";
-  return "";
+  if (ep.subtitles.has_target_subtitle || ep.job_status === "success") return "ok";
+  if (!ep.subtitles.has_source_subtitle || ep.job_status === "failed") return "bad";
+  if (ep.job_status === "pending") return "warn";
+  if (ep.job_status === "running") return "active";
+  return "idle";
+}
+
+function canTranslate(ep: Episode) {
+  return ep.translatable && !ep.in_progress && ep.job_status !== "success";
+}
+
+function toggleSelectAll() {
+  if (allSelectableSelected.value) {
+    const selectableIDs = new Set(selectableEpisodes.value.map((ep) => ep.id));
+    selectedEpisodeIds.value = selectedEpisodeIds.value.filter((id) => !selectableIDs.has(id));
+    return;
+  }
+  selectedEpisodeIds.value = selectableEpisodes.value.map((ep) => ep.id);
+}
+
+function mediaFileName(path: string) {
+  return path.replaceAll("\\", "/").split("/").filter(Boolean).pop() || path;
 }
 
 function langList(ep: Episode): string[] {
@@ -163,8 +226,7 @@ function langTooltip(ep: Episode): string {
 }
 
 function dedupeKey(ep: Episode): string {
-  const sourceSub = ep.subtitles.source_subtitle_files[0] || "[embedded]";
-  return `${ep.media_path}|${sourceSub}|${targetLanguage.value || "zh"}`;
+  return ep.media_path;
 }
 
 async function refresh() {
@@ -176,7 +238,7 @@ async function refresh() {
     episodes.value = resp.episodes || [];
     targetLanguage.value = resp.target_language || "";
     selectedEpisodeIds.value = selectedEpisodeIds.value.filter((id) =>
-      episodes.value.some((ep) => ep.id === id && ep.translatable && !ep.in_progress)
+      episodes.value.some((ep) => ep.id === id && canTranslate(ep))
     );
   } catch (err) {
     message.value = `Failed to refresh episodes: ${toErrorMessage(err)}`;
@@ -185,10 +247,28 @@ async function refresh() {
   }
 }
 
+async function loadSourceName() {
+  const fallback = humanizeSourceId(sourceId.value);
+  sourceName.value = fallback || "Library";
+  if (!sourceId.value) return;
+  try {
+    const sources = await listSources();
+    sourceName.value = sources.find((source) => source.id === sourceId.value)?.name || fallback;
+  } catch {
+    // Keep the readable route-derived fallback; episode loading remains independent.
+  }
+}
+
+function humanizeSourceId(value: string) {
+  return value
+    .replaceAll(/[-_]+/g, " ")
+    .replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
+}
+
 async function submitSelected() {
   if (submitting.value) return;
   const selected = episodes.value.filter(
-    (ep) => selectedEpisodeIds.value.includes(ep.id) && ep.translatable && !ep.in_progress
+    (ep) => selectedEpisodeIds.value.includes(ep.id) && canTranslate(ep)
   );
   if (selected.length === 0) {
     message.value = "No translatable episodes selected.";
@@ -212,8 +292,12 @@ async function submitSelected() {
     )
   );
 
-  for (const result of results) {
+  for (const [index, result] of results.entries()) {
     if (result.status === "fulfilled") {
+      const episode = selected[index];
+      episode.job_status = result.value.job.status;
+      episode.job_source = result.value.job.source;
+      episode.in_progress = result.value.job.status === "pending" || result.value.job.status === "running";
       if (result.value.created) {
         createdCount += 1;
       } else {
@@ -243,7 +327,7 @@ function toErrorMessage(err: unknown): string {
 }
 
 onMounted(async () => {
-  await refresh();
+  await Promise.all([refresh(), loadSourceName()]);
   refreshTimer = window.setInterval(() => {
     void refresh();
   }, EPISODE_REFRESH_INTERVAL_MS);

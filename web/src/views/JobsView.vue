@@ -9,9 +9,10 @@
 
     <div class="jobs-layout">
       <div class="job-list">
-        <article
+        <button
           v-for="job in jobs"
           :key="job.id"
+          type="button"
           class="job-row job-card job-selectable"
           :class="{ active: selectedJobId === job.id }"
           @click="selectJob(job.id)"
@@ -19,7 +20,7 @@
           <div class="job-main">
             <div class="job-title-line">
               <strong class="job-title">{{ titleName(job) }}</strong>
-              <span class="chip" :class="statusClass(job.status)">{{ job.status }}</span>
+              <span class="chip" :class="statusClass(job.status)">{{ statusLabel(job.status) }}</span>
             </div>
             <div class="job-subline">{{ episodeName(job) }}</div>
             <div class="job-meta-line">
@@ -27,56 +28,68 @@
               <span class="job-meta">{{ formatCreatedAt(job.created_at) }}</span>
             </div>
           </div>
-        </article>
+        </button>
       </div>
 
-      <div v-if="detail" class="job-detail">
+      <div v-if="displayJob" class="job-detail" :aria-busy="loadingDetail">
         <div class="job-detail-head">
-          <h2>{{ detail.job.id }}</h2>
+          <div>
+            <span class="eyebrow">Selected job</span>
+            <h2>{{ displayJob.id }}</h2>
+          </div>
           <div class="chips">
-            <span class="chip" :class="statusClass(detail.job.status)">{{ detail.job.status }}</span>
-            <span v-if="!detail.editable" class="chip warn">Locked While Running</span>
+            <span class="chip" :class="statusClass(displayJob.status)">{{ statusLabel(displayJob.status) }}</span>
+            <span v-if="activeDetail && !activeDetail.editable" class="chip warn">Read only</span>
           </div>
         </div>
 
+        <div v-if="!activeDetail" class="job-detail-pending">
+          <strong>{{ titleName(displayJob) }}</strong>
+          <span>{{ episodeName(displayJob) }}</span>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+          <p v-if="message" class="settings-message bad">{{ message }}</p>
+        </div>
+
+        <template v-if="activeDetail">
         <div class="job-meta-grid">
           <div class="meta-item">
             <span>Target</span>
-            <strong>{{ detail.target_language || "-" }}</strong>
+            <strong>{{ activeDetail.target_language || "-" }}</strong>
           </div>
           <div class="meta-item">
             <span>Series</span>
-            <strong>{{ detail.episode.series_name || "-" }}</strong>
+            <strong>{{ activeDetail.episode.series_name || "-" }}</strong>
           </div>
           <div class="meta-item">
             <span>Season</span>
-            <strong>{{ detail.episode.season || "-" }}</strong>
+            <strong>{{ activeDetail.episode.season || "-" }}</strong>
           </div>
           <div class="meta-item">
             <span>Episode</span>
-            <strong>{{ detail.episode.episode_name || "-" }}</strong>
+            <strong>{{ activeDetail.episode.episode_name || "-" }}</strong>
           </div>
         </div>
 
         <div class="progress-card">
           <div class="progress-text">
-            {{ detail.progress.translated_lines }} / {{ detail.progress.total_lines }} lines
-            ({{ formatPercent(detail.progress.percent) }})
+            {{ activeDetail.progress.translated_lines }} / {{ activeDetail.progress.total_lines }} lines
+            ({{ formatPercent(activeDetail.progress.percent) }})
           </div>
           <div class="progress-track">
-            <div class="progress-fill" :style="{ width: progressWidth(detail.progress.percent) }"></div>
+            <div class="progress-fill" :style="{ width: progressWidth(activeDetail.progress.percent) }"></div>
           </div>
         </div>
 
         <p v-if="message" class="settings-message">{{ message }}</p>
 
         <div class="preview-list">
-          <article v-for="line in detail.preview" :key="line.index" class="preview-row">
+          <article v-for="line in activeDetail.preview" :key="line.index" class="preview-row">
             <div class="preview-index">#{{ line.index }}</div>
             <div class="preview-original">{{ line.original_text || "-" }}</div>
             <textarea
               class="preview-edit"
-              :disabled="!detail.editable || saving"
+              :disabled="!activeDetail.editable || saving"
               :value="translatedText(line)"
               @input="onLineInput(line.index, ($event.target as HTMLTextAreaElement).value)"
             ></textarea>
@@ -89,6 +102,7 @@
             {{ saving ? "Saving..." : `Save ${dirtyChanges.length} Changes` }}
           </button>
         </div>
+        </template>
       </div>
 
       <div v-else class="empty-msg">Select a job to view details.</div>
@@ -117,6 +131,7 @@ const draftByLine = ref<Record<number, string>>({});
 const loadingDetail = ref(false);
 const saving = ref(false);
 const message = ref("");
+const detailCache = new Map<string, JobDetail>();
 let evt: EventSource | null = null;
 let syncingDetail = false;
 let detailReqSeq = 0;
@@ -177,13 +192,31 @@ function formatCreatedAt(value: string): string {
 
 function statusClass(status: string) {
   if (status === "success") return "ok";
-  if (status === "running" || status === "pending") return "warn";
+  if (status === "running") return "active";
+  if (status === "pending") return "warn";
+  if (status === "skipped") return "idle";
   return "bad";
+}
+
+function statusLabel(status: string) {
+  if (status === "pending") return "Pending";
+  if (status === "running") return "Running";
+  if (status === "success") return "Completed";
+  if (status === "failed") return "Failed";
+  if (status === "skipped") return "Skipped";
+  return status;
 }
 
 function selectedJob(): Job | undefined {
   return jobs.value.find((job) => job.id === selectedJobId.value);
 }
+
+const activeDetail = computed(() => {
+  if (!detail.value || detail.value.job.id !== selectedJobId.value) return null;
+  return detail.value;
+});
+
+const displayJob = computed(() => activeDetail.value?.job || selectedJob());
 
 function normalizeSelection() {
   if (jobs.value.length === 0) {
@@ -260,6 +293,7 @@ async function loadDetail(jobId: string, preserveDraft: boolean) {
     const next = await getJobDetail(jobId);
     if (reqSeq !== detailReqSeq || selectedJobId.value !== jobId) return;
     detail.value = next;
+    detailCache.set(jobId, next);
     message.value = "";
     if (!preserveDraft || !next.editable) {
       draftByLine.value = {};
@@ -299,7 +333,7 @@ async function reloadDetail() {
 async function selectJob(jobId: string) {
   if (selectedJobId.value === jobId) return;
   selectedJobId.value = jobId;
-  detail.value = null;
+  detail.value = detailCache.get(jobId) || null;
   draftByLine.value = {};
   message.value = "";
   await loadDetail(jobId, false);

@@ -26,14 +26,16 @@ type runtimeSettingsApplier func(next config.RuntimeSettings) error
 type jobDataStore interface {
 	LoadBatchCheckpoints(ctx context.Context, jobID string) ([]persistence.BatchCheckpoint, error)
 	GetSubtitleCache(ctx context.Context, cacheKey string) (subtitle.File, bool, error)
+	PutSubtitleCache(ctx context.Context, entry persistence.SubtitleCacheEntry) error
 }
 
 type Server struct {
-	scanner  *library.Scanner
-	queue    *jobs.Queue
-	settings runtimeSettingsStore
-	apply    runtimeSettingsApplier
-	jobData  jobDataStore
+	scanner         *library.Scanner
+	queue           *jobs.Queue
+	settings        runtimeSettingsStore
+	apply           runtimeSettingsApplier
+	jobData         jobDataStore
+	recoverSubtitle func(mediaPath string) (subtitle.File, error)
 
 	uiEnabled   bool
 	uiStaticDir string
@@ -71,10 +73,11 @@ func WithJobDataStore(store jobDataStore) Option {
 
 func NewServer(scanner *library.Scanner, queue *jobs.Queue, opts ...Option) *Server {
 	s := &Server{
-		scanner:   scanner,
-		queue:     queue,
-		uiEnabled: false,
-		mux:       http.NewServeMux(),
+		scanner:         scanner,
+		queue:           queue,
+		recoverSubtitle: recoverEmbeddedSubtitle,
+		uiEnabled:       false,
+		mux:             http.NewServeMux(),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -106,6 +109,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) routes() {
 	s.mux.HandleFunc("/api/library/sources", s.handleListSources)
 	s.mux.HandleFunc("/api/library/items", s.handleListItems)
+	s.mux.HandleFunc("/api/library/item-status", s.handleGetItemStatus)
+	s.mux.HandleFunc("/api/library/item-statuses", s.handleListItemStatuses)
 	s.mux.HandleFunc("/api/library/items/", s.handleListEpisodesByItem)
 	s.mux.HandleFunc("/api/jobs", s.handleJobs)
 	s.mux.HandleFunc("/api/jobs/stream", s.handleJobStream)

@@ -89,3 +89,27 @@ func TestQueue_RecoversPendingAndRunningJobsFromStore(t *testing.T) {
 		return ok && got.Status == StatusSuccess
 	}, time.Second, 10*time.Millisecond)
 }
+
+func TestQueue_HydratePreservesTerminalJobDedupeKey(t *testing.T) {
+	store := newMemoryStore()
+	now := time.Now()
+	store.jobs["job-1"] = &TranslationJob{
+		ID:        "job-1",
+		Source:    "manual",
+		DedupeKey: "/media/episode01.mkv|/media/episode01.srt|ja",
+		Status:    StatusSuccess,
+		Payload: JobPayload{
+			MediaFile:    "/media/episode01.mkv",
+			SubtitleFile: "/media/episode01.srt",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	q := NewQueue(1, store)
+
+	got, ok := q.Get("job-1")
+	require.True(t, ok)
+	require.NotNil(t, got)
+	assert.Equal(t, "/media/episode01.mkv|/media/episode01.srt|ja", got.DedupeKey)
+}

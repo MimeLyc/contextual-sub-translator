@@ -15,6 +15,8 @@ import (
 
 	"github.com/MimeLyc/contextual-sub-translator/internal/jobs"
 	"github.com/MimeLyc/contextual-sub-translator/internal/library"
+	"github.com/MimeLyc/contextual-sub-translator/internal/media"
+	"github.com/MimeLyc/contextual-sub-translator/internal/persistence"
 	"github.com/MimeLyc/contextual-sub-translator/internal/subtitle"
 	"golang.org/x/text/language"
 )
@@ -32,6 +34,21 @@ var (
 
 	jobTargetLanguagePattern = regexp.MustCompile(`^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$`)
 )
+
+func recoverEmbeddedSubtitle(mediaPath string) (subtitle.File, error) {
+	payload, err := media.NewOperator(mediaPath).ExtractSubtitleToBytes()
+	if err != nil {
+		return subtitle.File{}, err
+	}
+	ext := filepath.Ext(mediaPath)
+	stem := strings.TrimSuffix(filepath.Base(mediaPath), ext)
+	pathHint := filepath.Join(filepath.Dir(mediaPath), stem+"_ctxtrans_embedded.srt")
+	recovered, err := subtitle.ReadSRTBytes(payload, pathHint)
+	if err != nil {
+		return subtitle.File{}, err
+	}
+	return *recovered, nil
+}
 
 type jobDetailResponse struct {
 	Job            *jobs.TranslationJob `json:"job"`
@@ -388,6 +405,15 @@ func (s *Server) readSourceLinesForJob(ctx context.Context, job *jobs.Translatio
 	if job == nil {
 		return nil, errJobNotFound
 	}
+	if s.jobData != nil && job.ID != "" {
+		cached, ok, err := s.jobData.GetSubtitleCache(ctx, persistence.JobOriginalSubtitleCacheKey(job.ID))
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return cached.Lines, nil
+		}
+	}
 	if lines, ok, err := readSubtitleLinesByPath(job.Payload.SubtitleFile); err != nil {
 		return nil, err
 	} else if ok {
@@ -401,10 +427,24 @@ func (s *Server) readSourceLinesForJob(ctx context.Context, job *jobs.Translatio
 	if err != nil {
 		return nil, err
 	}
-	if !ok {
+	if ok {
+		return cached.Lines, nil
+	}
+	if strings.TrimSpace(job.Payload.SubtitleFile) != "" || s.recoverSubtitle == nil {
 		return nil, nil
 	}
-	return cached.Lines, nil
+	recovered, err := s.recoverSubtitle(job.Payload.MediaFile)
+	if err != nil {
+		return nil, nil
+	}
+	_ = s.jobData.PutSubtitleCache(ctx, persistence.SubtitleCacheEntry{
+		CacheKey:  persistence.JobOriginalSubtitleCacheKey(job.ID),
+		MediaPath: job.Payload.MediaFile,
+		JobID:     job.ID,
+		File:      recovered,
+		IsTemp:    false,
+	})
+	return recovered.Lines, nil
 }
 
 func readSubtitleLinesIfFileExists(path string) ([]subtitle.Line, error) {
@@ -550,26 +590,5 @@ func (s *Server) findEpisodeByMediaPath(ctx context.Context, mediaPath string) (
 	if s.scanner == nil || strings.TrimSpace(mediaPath) == "" {
 		return library.Episode{}, "", false
 	}
-	sources, err := s.scanner.ScanSources(ctx)
-	if err != nil {
-		return library.Episode{}, "", false
-	}
-	for _, source := range sources {
-		items, err := s.scanner.ScanItems(ctx, source.ID)
-		if err != nil {
-			continue
-		}
-		for _, item := range items {
-			episodes, err := s.scanner.ScanEpisodesByItem(ctx, item.ID)
-			if err != nil {
-				continue
-			}
-			for _, episode := range episodes {
-				if episode.MediaPath == mediaPath {
-					return episode, item.Name, true
-				}
-			}
-		}
-	}
-	return library.Episode{}, "", false
+	return s.scanner.DescribeMediaPath(mediaPath)
 }

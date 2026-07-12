@@ -93,6 +93,10 @@ func TestSQLiteStore_SubtitleCacheRoundTrip(t *testing.T) {
 		IsTemp: true,
 	}
 	require.NoError(t, store.PutSubtitleCache(ctx, entry))
+	durableEntry := entry
+	durableEntry.CacheKey = JobOriginalSubtitleCacheKey(entry.JobID)
+	durableEntry.IsTemp = false
+	require.NoError(t, store.PutSubtitleCache(ctx, durableEntry))
 
 	cached, ok, err := store.GetSubtitleCache(ctx, entry.CacheKey)
 	require.NoError(t, err)
@@ -105,6 +109,11 @@ func TestSQLiteStore_SubtitleCacheRoundTrip(t *testing.T) {
 	_, ok, err = store.GetSubtitleCache(ctx, entry.CacheKey)
 	require.NoError(t, err)
 	assert.False(t, ok)
+
+	durable, ok, err := store.GetSubtitleCache(ctx, durableEntry.CacheKey)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, "hello", durable.Lines[0].Text)
 }
 
 func TestSQLiteStore_MediaMetaCacheTTL(t *testing.T) {

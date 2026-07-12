@@ -1,5 +1,7 @@
 package library
 
+import "time"
+
 type SourceConfig struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -14,11 +16,13 @@ type Source struct {
 }
 
 type Item struct {
-	ID           string `json:"id"`
-	SourceID     string `json:"source_id"`
-	Name         string `json:"name"`
-	Path         string `json:"path"`
-	EpisodeCount int    `json:"episode_count"`
+	ID           string    `json:"id"`
+	SourceID     string    `json:"source_id"`
+	Name         string    `json:"name"`
+	Path         string    `json:"path"`
+	EpisodeCount int       `json:"episode_count"`
+	AddedAt      time.Time `json:"added_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type SubtitleStatus struct {

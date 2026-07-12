@@ -82,8 +82,8 @@ type itemsCache struct {
 }
 
 type episodesCache struct {
-	version uint64
-	scanned time.Time
+	version  uint64
+	scanned  time.Time
 	episodes []Episode
 }
 
@@ -98,13 +98,19 @@ type Scanner struct {
 	configVersion uint64
 
 	// Tiered caches
-	srcCache        *sourcesCache
-	srcCacheTTL     time.Duration
-	itemsCaches     map[string]*itemsCache // keyed by sourceID
-	itemsCacheTTL   time.Duration
-	epCaches        map[string]*episodesCache // keyed by itemID
-	epCacheTTL      time.Duration
-	maxConcurrency  int
+	srcCache       *sourcesCache
+	srcCacheTTL    time.Duration
+	itemsCaches    map[string]*itemsCache // keyed by sourceID
+	itemsCacheTTL  time.Duration
+	epCaches       map[string]*episodesCache // keyed by itemID
+	epCacheTTL     time.Duration
+	maxConcurrency int
+}
+
+var itemCoverNames = []string{
+	"poster.jpg", "poster.jpeg", "poster.png", "poster.webp", "poster.avif",
+	"folder.jpg", "folder.jpeg", "folder.png", "folder.webp", "folder.avif",
+	"cover.jpg", "cover.jpeg", "cover.png", "cover.webp", "cover.avif",
 }
 
 func NewScanner(
@@ -166,6 +172,118 @@ func (s *Scanner) Invalidate() {
 	s.mu.Lock()
 	s.invalidateLocked()
 	s.mu.Unlock()
+}
+
+// ItemCoverPath returns the preferred poster-like image stored directly in an
+// item directory. The item path must belong to the source encoded in itemID;
+// callers can safely serve the returned file without exposing arbitrary paths.
+func (s *Scanner) ItemCoverPath(itemID string) (string, bool) {
+	sourceID, itemPath, ok := splitItemID(itemID)
+	if !ok {
+		return "", false
+	}
+
+	s.mu.RLock()
+	sources := append([]SourceConfig(nil), s.sources...)
+	s.mu.RUnlock()
+
+	var sourcePath string
+	for _, source := range sources {
+		if source.ID == sourceID {
+			sourcePath = source.Path
+			break
+		}
+	}
+	if sourcePath == "" || !pathWithinRoot(sourcePath, itemPath) {
+		return "", false
+	}
+
+	entries, err := os.ReadDir(itemPath)
+	if err != nil {
+		return "", false
+	}
+	filesByName := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		filesByName[strings.ToLower(entry.Name())] = entry.Name()
+	}
+	for _, candidate := range itemCoverNames {
+		if actualName, exists := filesByName[candidate]; exists {
+			return filepath.Join(itemPath, actualName), true
+		}
+	}
+	return "", false
+}
+
+// DescribeMediaPath resolves display metadata using only the configured source
+// roots and the media path. Unlike a library scan, it does not enumerate every
+// item or probe subtitles, so job details can render without a full scan.
+func (s *Scanner) DescribeMediaPath(mediaPath string) (Episode, string, bool) {
+	mediaPath = filepath.Clean(strings.TrimSpace(mediaPath))
+	if mediaPath == "." || mediaPath == "" {
+		return Episode{}, "", false
+	}
+
+	s.mu.RLock()
+	sources := append([]SourceConfig(nil), s.sources...)
+	s.mu.RUnlock()
+
+	var matched SourceConfig
+	for _, source := range sources {
+		if source.Path == "" || !pathWithinRoot(source.Path, mediaPath) {
+			continue
+		}
+		if matched.Path == "" || len(filepath.Clean(source.Path)) > len(filepath.Clean(matched.Path)) {
+			matched = source
+		}
+	}
+	if matched.Path == "" {
+		return Episode{}, "", false
+	}
+
+	itemPath := resolveSeriesPath(filepath.Clean(matched.Path), mediaPath)
+	if !pathWithinRoot(matched.Path, itemPath) {
+		return Episode{}, "", false
+	}
+	baseName := strings.TrimSuffix(filepath.Base(mediaPath), filepath.Ext(mediaPath))
+	episode := Episode{
+		ID:        mediaPath,
+		SourceID:  matched.ID,
+		ItemID:    matched.ID + "|" + itemPath,
+		Name:      cleanEpisodeName(baseName),
+		Season:    resolveSeasonName(itemPath, mediaPath),
+		MediaPath: mediaPath,
+	}
+	return episode, filepath.Base(itemPath), true
+}
+
+func splitItemID(itemID string) (sourceID string, itemPath string, ok bool) {
+	sepIdx := strings.Index(itemID, "|")
+	if sepIdx <= 0 || sepIdx == len(itemID)-1 {
+		return "", "", false
+	}
+	return itemID[:sepIdx], filepath.Clean(itemID[sepIdx+1:]), true
+}
+
+func pathWithinRoot(root string, candidate string) bool {
+	root = filepath.Clean(strings.TrimSpace(root))
+	candidate = filepath.Clean(strings.TrimSpace(candidate))
+	if root == "." || root == "" || candidate == "." || candidate == "" {
+		return false
+	}
+	if resolvedRoot, err := filepath.EvalSymlinks(root); err == nil {
+		if resolvedCandidate, err := filepath.EvalSymlinks(candidate); err == nil {
+			root = resolvedRoot
+			candidate = resolvedCandidate
+		}
+	}
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil || rel == "." {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func (s *Scanner) invalidateLocked() {
@@ -484,7 +602,7 @@ func (s *Scanner) ScanItems(ctx context.Context, sourceID string) ([]Item, error
 			continue
 		}
 		dirPath := filepath.Join(sourceCfg.Path, e.Name())
-		mediaFiles, err := findMediaFiles(dirPath)
+		mediaFiles, addedAt, updatedAt, err := findMediaFilesWithTimes(dirPath)
 		if err != nil {
 			return nil, err
 		}
@@ -497,6 +615,8 @@ func (s *Scanner) ScanItems(ctx context.Context, sourceID string) ([]Item, error
 			Name:         e.Name(),
 			Path:         dirPath,
 			EpisodeCount: len(mediaFiles),
+			AddedAt:      addedAt,
+			UpdatedAt:    updatedAt,
 		})
 	}
 
@@ -657,6 +777,45 @@ var mediaExts = []string{
 	".mkv", ".mp4", ".m4v", ".mov", ".avi", ".wmv", ".flv", ".webm",
 	".ogv", ".3gp", ".3g2", ".f4v", ".asf", ".rm", ".rmvb", ".ts",
 	".m2ts", ".mts", ".vob", ".mpg", ".mpeg", ".m2v", ".divx", ".xvid",
+}
+
+var libraryMetadataExts = []string{
+	".jpg", ".jpeg", ".png", ".webp", ".avif", ".nfo",
+}
+
+func findMediaFilesWithTimes(root string) (mediaFiles []string, addedAt time.Time, updatedAt time.Time, err error) {
+	mediaFiles = make([]string, 0)
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		isMedia := slices.Contains(mediaExts, ext)
+		if !isMedia && !slices.Contains(subtitleExts, ext) && !slices.Contains(libraryMetadataExts, ext) {
+			return nil
+		}
+
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		modifiedAt := info.ModTime()
+		if updatedAt.IsZero() || modifiedAt.After(updatedAt) {
+			updatedAt = modifiedAt
+		}
+		if isMedia {
+			mediaFiles = append(mediaFiles, path)
+			if addedAt.IsZero() || modifiedAt.Before(addedAt) {
+				addedAt = modifiedAt
+			}
+		}
+		return nil
+	})
+	return mediaFiles, addedAt, updatedAt, err
 }
 
 func findMediaFiles(root string) ([]string, error) {

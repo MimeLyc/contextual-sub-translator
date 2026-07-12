@@ -4,9 +4,15 @@
       <h1>Settings</h1>
       <div class="row-gap">
         <button class="btn" :disabled="loading || saving" @click="reload">Reload</button>
-        <button class="btn btn-primary" :disabled="loading || saving" @click="save">Save</button>
+        <button class="btn btn-primary" :disabled="loading || saving" @click="save">
+          {{ saveButtonLabel }}
+        </button>
       </div>
     </div>
+
+    <p v-if="message" class="settings-message" :class="messageTone" role="status" aria-live="polite">
+      {{ message }}
+    </p>
 
     <div class="settings-form">
       <label class="field">
@@ -50,17 +56,22 @@
       </label>
     </div>
 
-    <p v-if="message" class="settings-message">{{ message }}</p>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { getSettings, updateSettings, type RuntimeSettings } from "../api";
 
 const loading = ref(false);
 const saving = ref(false);
 const message = ref("");
+const messageTone = ref<"info" | "ok" | "bad">("info");
+const saveButtonLabel = computed(() => {
+  if (saving.value) return "Saving...";
+  if (loading.value) return "Loading...";
+  return "Save";
+});
 
 const form = reactive<RuntimeSettings>({
   llm_api_url: "",
@@ -73,6 +84,7 @@ const form = reactive<RuntimeSettings>({
 async function loadSettings() {
   loading.value = true;
   message.value = "";
+  messageTone.value = "info";
   try {
     const settings = await getSettings();
     form.llm_api_url = settings.llm_api_url || "";
@@ -81,6 +93,7 @@ async function loadSettings() {
     form.cron_expr = settings.cron_expr || "";
     form.target_language = settings.target_language || "";
   } catch (err) {
+    messageTone.value = "bad";
     message.value = err instanceof Error ? err.message : "Failed to load settings";
   } finally {
     loading.value = false;
@@ -93,7 +106,8 @@ async function reload() {
 
 async function save() {
   saving.value = true;
-  message.value = "";
+  messageTone.value = "info";
+  message.value = "Saving settings...";
   try {
     const saved = await updateSettings({
       llm_api_url: form.llm_api_url,
@@ -107,8 +121,10 @@ async function save() {
     form.llm_model = saved.llm_model || "";
     form.cron_expr = saved.cron_expr || "";
     form.target_language = saved.target_language || "";
-    message.value = "Settings saved";
+    messageTone.value = "ok";
+    message.value = `Settings saved at ${new Date().toLocaleTimeString()}`;
   } catch (err) {
+    messageTone.value = "bad";
     message.value = err instanceof Error ? err.message : "Failed to save settings";
   } finally {
     saving.value = false;

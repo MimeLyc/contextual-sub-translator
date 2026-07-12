@@ -1,18 +1,26 @@
 <template>
   <section class="panel">
     <div class="panel-head">
-      <h1>Media Library</h1>
+      <div class="title-block">
+        <span class="eyebrow">Workspace</span>
+        <h1>Media library</h1>
+        <p>Choose a source to browse its titles and translation coverage.</p>
+      </div>
       <button class="btn" @click="refresh">Refresh</button>
     </div>
-    <div class="cards">
+    <div class="source-grid">
       <RouterLink
         v-for="source in sources"
         :key="source.id"
-        class="item-card"
+        class="source-card"
         :to="`/library/${source.id}`"
       >
-        <h3>{{ source.name }}</h3>
-        <p>{{ source.item_count }} items</p>
+        <span class="source-icon" aria-hidden="true">{{ sourceInitials(source.name) }}</span>
+        <span class="source-copy">
+          <strong>{{ source.name }}</strong>
+          <span>{{ source.item_count }} {{ source.item_count === 1 ? "title" : "titles" }}</span>
+        </span>
+        <span class="card-arrow" aria-hidden="true">→</span>
       </RouterLink>
     </div>
   </section>
@@ -26,6 +34,16 @@ const sources = ref<Source[]>([]);
 
 async function refresh() {
   sources.value = await listSources();
+}
+
+function sourceInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "M";
 }
 
 onMounted(refresh);

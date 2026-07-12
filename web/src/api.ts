@@ -11,6 +11,20 @@ export interface Item {
   name: string;
   path: string;
   episode_count: number;
+  added_at: string;
+  updated_at: string;
+}
+
+export interface ItemStatusSummary {
+  item_id: string;
+  total: number;
+  no_need: number;
+  idle: number;
+  pending: number;
+  translating: number;
+  failed: number;
+  skipped: number;
+  no_source: number;
 }
 
 export interface SubtitleStatus {
@@ -103,7 +117,7 @@ export interface RuntimeSettings {
 
 export interface CreateJobRequest {
   source: string;
-  dedupeKey: string;
+  dedupeKey?: string;
   mediaPath: string;
   subtitlePath?: string;
   nfoPath?: string;
@@ -136,6 +150,16 @@ export function listSources(): Promise<Source[]> {
 export function listItems(sourceId: string): Promise<Item[]> {
   const q = new URLSearchParams({ source: sourceId });
   return request<Item[]>(`/api/library/items?${q.toString()}`);
+}
+
+export function listItemStatuses(sourceId: string): Promise<ItemStatusSummary[]> {
+  const q = new URLSearchParams({ source: sourceId });
+  return request<ItemStatusSummary[]>(`/api/library/item-statuses?${q.toString()}`);
+}
+
+export function getItemStatus(itemId: string, signal?: AbortSignal): Promise<ItemStatusSummary> {
+  const q = new URLSearchParams({ item: itemId });
+  return request<ItemStatusSummary>(`/api/library/item-status?${q.toString()}`, { signal });
 }
 
 export interface EpisodesResponse {
